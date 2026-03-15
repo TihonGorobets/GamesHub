@@ -91,6 +91,56 @@ h1, h2, h3, h4 {
     var(--bg);
 }
 
+/* ─── Floating characters layer ─────────────────────────────── */
+#landing-floaters {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.floater {
+  position: absolute;
+  will-change: transform, opacity;
+  image-rendering: auto;
+  user-select: none;
+  animation: floatDrift var(--dur, 28s) linear var(--delay, 0s) infinite;
+  opacity: var(--op, 0.55);
+  filter: drop-shadow(0 4px 18px rgba(0,0,0,0.5));
+}
+/* 8 drift keyframe paths for variety */
+@keyframes floatDrift {
+  0%   { transform: translate(0, 0)           rotate(var(--rot0, 0deg))   scale(1);    }
+  25%  { transform: translate(var(--dx1,60px), var(--dy1,-80px))  rotate(var(--rot1,8deg))  scale(1.04); }
+  50%  { transform: translate(var(--dx2,120px),var(--dy2,20px))   rotate(var(--rot2,0deg))  scale(1);    }
+  75%  { transform: translate(var(--dx3,60px), var(--dy3,100px))  rotate(var(--rot3,-8deg)) scale(0.97); }
+  100% { transform: translate(0, 0)           rotate(var(--rot0, 0deg))   scale(1);    }
+}
+
+/* ─── Music toggle button ────────────────────────────────────── */
+.music-toggle {
+  position: fixed;
+  bottom: 1.4rem;
+  right: 1.4rem;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), opacity var(--transition);
+  opacity: 0.7;
+}
+.music-toggle:hover { background: rgba(255,255,255,0.14); color: var(--text-primary); opacity: 1; }
+.music-toggle.muted { color: var(--text-dim); }
+.music-toggle.hidden { display: none !important; }
+
 /* ─── Landing – nickname entry ─────────────────────────────── */
 .landing-center {
   flex: 1;
@@ -101,6 +151,8 @@ h1, h2, h3, h4 {
   padding: 3rem 1.5rem;
   text-align: center;
   gap: 0;
+  position: relative;
+  z-index: 1;
 }
 .landing-logo { margin-bottom: 2.5rem; }
 

@@ -36,10 +36,131 @@ let state = {
 // ─────────────────────────────────────────────────────────
 function $(id) { return document.getElementById(id); }
 
+// ─────────────────────────────────────────────────────────
+//  LANDING MUSIC
+// ─────────────────────────────────────────────────────────
+const landingMusic = $('landing-music');
+let musicMuted     = false;
+let musicStarted   = false;
+
+function startLandingMusic() {
+  if (!landingMusic) return;
+  landingMusic.volume = 0.35;
+  const p = landingMusic.play();
+  if (p && p.catch) p.catch(() => {}); // suppress autoplay-blocked errors
+  musicStarted = true;
+}
+function stopLandingMusic() {
+  if (!landingMusic) return;
+  landingMusic.pause();
+  landingMusic.currentTime = 0;
+  musicStarted = false;
+}
+
+// Mute toggle button
+const btnMusicToggle = $('btn-music-toggle');
+const musicIcon      = $('music-icon');
+function updateMusicIcon() {
+  if (!musicIcon) return;
+  musicIcon.className = musicMuted
+    ? 'fi fi-rr-volume-mute'
+    : 'fi fi-rr-volume';
+  btnMusicToggle?.classList.toggle('muted', musicMuted);
+}
+if (btnMusicToggle) {
+  btnMusicToggle.addEventListener('click', () => {
+    musicMuted = !musicMuted;
+    if (landingMusic) landingMusic.muted = musicMuted;
+    updateMusicIcon();
+    // If we haven't started yet (autoplay blocked), start now on interaction
+    if (!musicMuted && !musicStarted) startLandingMusic();
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+//  FLOATING CHARACTERS (Among Us style)
+// ─────────────────────────────────────────────────────────
+const FLOATER_SRCS = [
+  '/memes/igor_meme/igor1.png',
+  '/memes/igor_meme/igor2.png',
+  '/memes/igor_meme/igor3.png',
+];
+
+function spawnFloaters() {
+  const container = $('landing-floaters');
+  if (!container || container.children.length > 0) return;
+
+  const configs = [
+    // [size, startLeft%, startTop%, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, opacity, rotBase]
+    [88,   8,  15, '70px',  '-90px', '130px', '30px',  '70px',  '120px', 34, 0,    0.50, '-6deg'],
+    [70,  78,  10, '-80px', '-60px', '-140px','40px',  '-80px', '110px', 29, 3,    0.45, '5deg'],
+    [105, 85,  55, '-90px', '-80px', '-160px','-20px', '-90px', '60px',  38, 7,    0.55, '0deg'],
+    [62,  12,  70, '80px',  '-70px', '130px', '-10px', '80px',  '80px',  32, 12,   0.40, '8deg'],
+    [78,  50,   5, '60px',  '80px',  '110px', '160px', '60px',  '220px', 42, 5,    0.50, '-4deg'],
+    [95,  30,  80, '-70px', '-100px','-100px','-180px','-70px', '-260px',36, 9,    0.45, '7deg'],
+    [58,  65,  88, '50px',  '-80px', '-20px', '-150px','50px',  '-230px',30, 16,   0.38, '-8deg'],
+    [82,  20,  40, '-60px', '70px',  '-110px','140px', '-60px', '220px', 44, 2,    0.52, '4deg'],
+    [66,  90,  75, '-80px', '-50px', '-150px','20px',  '-80px', '90px',  33, 18,   0.42, '-5deg'],
+    [110, 45,  45, '50px',  '-70px', '30px',  '-130px','50px',  '-200px',50, 8,    0.35, '3deg'],
+  ];
+
+  configs.forEach(([size, left, top, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, op, rot0]) => {
+    const img = document.createElement('img');
+    img.src   = FLOATER_SRCS[Math.floor(Math.random() * FLOATER_SRCS.length)];
+    img.alt   = '';
+    img.className = 'floater';
+    img.draggable = false;
+    img.style.cssText = `
+      width: ${size}px;
+      left: ${left}%;
+      top: ${top}%;
+      --dur: ${dur}s;
+      --delay: -${delay}s;
+      --op: ${op};
+      --rot0: ${rot0};
+      --dx1: ${dx1}; --dy1: ${dy1};
+      --dx2: ${dx2}; --dy2: ${dy2};
+      --dx3: ${dx3}; --dy3: ${dy3};
+      --rot1: ${Math.random() > 0.5 ? '10deg' : '-10deg'};
+      --rot2: ${rot0};
+      --rot3: ${Math.random() > 0.5 ? '-12deg' : '12deg'};
+    `;
+    container.appendChild(img);
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+//  SCREEN ROUTING
+// ─────────────────────────────────────────────────────────
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
   $(`screen-${name}`).classList.add('active');
+
+  if (name === 'landing') {
+    // Show music toggle + try autoplay
+    btnMusicToggle?.classList.remove('hidden');
+    startLandingMusic();
+    spawnFloaters();
+  } else {
+    // Hide music toggle + pause music when leaving landing
+    btnMusicToggle?.classList.add('hidden');
+    stopLandingMusic();
+  }
 }
+
+// Attempt autoplay on page load (landing is the default screen)
+window.addEventListener('DOMContentLoaded', () => {
+  spawnFloaters();
+  startLandingMusic();
+  // If autoplay was blocked, first interaction on the page will start it
+  const startOnInteract = () => {
+    if (!musicStarted && !musicMuted) startLandingMusic();
+    window.removeEventListener('pointerdown', startOnInteract);
+    window.removeEventListener('keydown',     startOnInteract);
+  };
+  window.addEventListener('pointerdown', startOnInteract);
+  window.addEventListener('keydown',     startOnInteract);
+});
 
 function showToast(msg, duration = 2800) {
   const t = $('toast');

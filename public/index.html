@@ -18,6 +18,16 @@
   ══════════════════════════════════════════════════════════════ -->
   <div id="screen-landing" class="screen active">
     <div class="landing-bg"></div>
+    <!-- Floating Igor characters -->
+    <div id="landing-floaters" aria-hidden="true"></div>
+    <!-- Background music -->
+    <audio id="landing-music" loop preload="auto">
+      <source src="/memes/music/01.%20Among%20Us%20Theme.flac" type="audio/flac" />
+    </audio>
+    <!-- Music mute toggle -->
+    <button class="music-toggle" id="btn-music-toggle" title="Toggle music" aria-label="Toggle background music">
+      <i class="fi fi-rr-volume" id="music-icon" aria-hidden="true"></i>
+    </button>
 
     <div class="landing-center">
       <div class="logo landing-logo">
