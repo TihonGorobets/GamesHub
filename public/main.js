@@ -92,16 +92,16 @@ function spawnFloaters() {
 
   const configs = [
     // [size, startLeft%, startTop%, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, opacity, rotBase]
-    [88,   8,  15, '70px',  '-90px', '130px', '30px',  '70px',  '120px', 34, 0,    0.50, '-6deg'],
-    [70,  78,  10, '-80px', '-60px', '-140px','40px',  '-80px', '110px', 29, 3,    0.45, '5deg'],
-    [105, 85,  55, '-90px', '-80px', '-160px','-20px', '-90px', '60px',  38, 7,    0.55, '0deg'],
-    [62,  12,  70, '80px',  '-70px', '130px', '-10px', '80px',  '80px',  32, 12,   0.40, '8deg'],
-    [78,  50,   5, '60px',  '80px',  '110px', '160px', '60px',  '220px', 42, 5,    0.50, '-4deg'],
-    [95,  30,  80, '-70px', '-100px','-100px','-180px','-70px', '-260px',36, 9,    0.45, '7deg'],
-    [58,  65,  88, '50px',  '-80px', '-20px', '-150px','50px',  '-230px',30, 16,   0.38, '-8deg'],
-    [82,  20,  40, '-60px', '70px',  '-110px','140px', '-60px', '220px', 44, 2,    0.52, '4deg'],
-    [66,  90,  75, '-80px', '-50px', '-150px','20px',  '-80px', '90px',  33, 18,   0.42, '-5deg'],
-    [110, 45,  45, '50px',  '-70px', '30px',  '-130px','50px',  '-200px',50, 8,    0.35, '3deg'],
+    [130,  8,  15, '70px',  '-90px', '130px', '30px',  '70px',  '120px', 34, 0,    0.55, '-6deg'],
+    [105, 78,  10, '-80px', '-60px', '-140px','40px',  '-80px', '110px', 29, 3,    0.50, '5deg'],
+    [155, 85,  55, '-90px', '-80px', '-160px','-20px', '-90px', '60px',  38, 7,    0.58, '0deg'],
+    [95,  12,  70, '80px',  '-70px', '130px', '-10px', '80px',  '80px',  32, 12,   0.45, '8deg'],
+    [120, 50,   5, '60px',  '80px',  '110px', '160px', '60px',  '220px', 42, 5,    0.55, '-4deg'],
+    [140, 30,  80, '-70px', '-100px','-100px','-180px','-70px', '-260px',36, 9,    0.50, '7deg'],
+    [88,  65,  88, '50px',  '-80px', '-20px', '-150px','50px',  '-230px',30, 16,   0.42, '-8deg'],
+    [125, 20,  40, '-60px', '70px',  '-110px','140px', '-60px', '220px', 44, 2,    0.55, '4deg'],
+    [100, 90,  75, '-80px', '-50px', '-150px','20px',  '-80px', '90px',  33, 18,   0.48, '-5deg'],
+    [160, 45,  45, '50px',  '-70px', '30px',  '-130px','50px',  '-200px',50, 8,    0.40, '3deg'],
   ];
 
   configs.forEach(([size, left, top, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, op, rot0]) => {
@@ -148,19 +148,18 @@ function showScreen(name) {
   }
 }
 
-// Attempt autoplay on page load (landing is the default screen)
-window.addEventListener('DOMContentLoaded', () => {
-  spawnFloaters();
-  startLandingMusic();
-  // If autoplay was blocked, first interaction on the page will start it
-  const startOnInteract = () => {
-    if (!musicStarted && !musicMuted) startLandingMusic();
-    window.removeEventListener('pointerdown', startOnInteract);
-    window.removeEventListener('keydown',     startOnInteract);
-  };
-  window.addEventListener('pointerdown', startOnInteract);
-  window.addEventListener('keydown',     startOnInteract);
-});
+// Attempt autoplay on page load.
+// ES modules are deferred — DOM is already ready when this runs, so we call directly.
+spawnFloaters();
+startLandingMusic();
+// If autoplay was blocked by the browser, start on first interaction
+const _startOnInteract = () => {
+  if (!musicStarted && !musicMuted) startLandingMusic();
+  window.removeEventListener('pointerdown', _startOnInteract);
+  window.removeEventListener('keydown',     _startOnInteract);
+};
+window.addEventListener('pointerdown', _startOnInteract);
+window.addEventListener('keydown',     _startOnInteract);
 
 function showToast(msg, duration = 2800) {
   const t = $('toast');
