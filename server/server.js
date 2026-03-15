@@ -25,6 +25,9 @@ app.use(express.json());
 // Serve static files from /public
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Serve meme assets (temporary feature)
+app.use('/memes', express.static(path.join(__dirname, '..', 'memes')));
+
 // SPA fallback – every unmatched GET returns index.html
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));

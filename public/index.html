@@ -57,6 +57,9 @@
         <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
         <span class="logo-text">GamesHub</span>
       </div>
+      <button class="btn btn-danger btn-sm btn-do-not-click" type="button">
+        <i class="fi fi-rr-warning" aria-hidden="true"></i> DO NOT CLICK
+      </button>
       <div class="header-player-badge" id="hub-player-badge">
         <i class="fi fi-rr-user" aria-hidden="true"></i>
         <span id="hub-player-name"></span>
@@ -85,6 +88,9 @@
         <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
         <span class="logo-text">GamesHub</span>
       </div>
+      <button class="btn btn-danger btn-sm btn-do-not-click" type="button">
+        <i class="fi fi-rr-warning" aria-hidden="true"></i> DO NOT CLICK
+      </button>
       <div class="header-player-badge">
         <i class="fi fi-rr-user" aria-hidden="true"></i>
         <span id="detail-player-name"></span>
@@ -151,6 +157,9 @@
         <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
         <span class="logo-text">GamesHub</span>
       </div>
+      <button class="btn btn-danger btn-sm btn-do-not-click" type="button">
+        <i class="fi fi-rr-warning" aria-hidden="true"></i> DO NOT CLICK
+      </button>
       <div class="room-badge">
         <i class="fi fi-rr-key" aria-hidden="true"></i>
         <span id="lobby-room-code" class="room-code">––––</span>
@@ -207,6 +216,9 @@
         <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
         <span class="logo-text">GamesHub</span>
       </div>
+      <button class="btn btn-danger btn-sm btn-do-not-click" type="button">
+        <i class="fi fi-rr-warning" aria-hidden="true"></i> DO NOT CLICK
+      </button>
       <div class="room-badge">
         <i class="fi fi-rr-key" aria-hidden="true"></i>
         <span id="game-room-code" class="room-code">––––</span>
@@ -308,6 +320,16 @@
 
   <!-- Toast notification -->
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Meme overlay (temporary) -->
+  <div id="meme-overlay" class="meme-overlay hidden" role="dialog" aria-modal="true">
+    <div class="meme-modal">
+      <button class="meme-close" id="btn-meme-close" type="button" aria-label="Close">
+        <i class="fi fi-rr-cross-small" aria-hidden="true"></i>
+      </button>
+      <video id="meme-video" class="meme-video" playsinline></video>
+    </div>
+  </div>
 
   <!-- ─── Scripts ─────────────────────────────────────────────── -->
   <!-- Socket.IO client – loaded from server -->

@@ -97,6 +97,64 @@ function escHtml(str) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  TEMPORARY MEME BUTTON
+// ─────────────────────────────────────────────────────────
+const MEME_VIDEO_SRC = '/memes/video5312398194624209429.mp4';
+const MEME_SOUND_SRC = '/memes/the-rock-meme-sound-effect_INUb6uwK.mp3';
+
+let memeAudio = null;
+let memeSoundHasPlayed = false;
+
+function openMemeOverlay() {
+  const overlay = $('meme-overlay');
+  const video = $('meme-video');
+  if (!overlay || !video) return;
+
+  overlay.classList.remove('hidden');
+
+  // Load and play the video (user gesture -> should allow play)
+  video.src = MEME_VIDEO_SRC;
+  video.currentTime = 0;
+  video.loop = true;
+  video.controls = true;
+  video.play().catch(() => {});
+}
+
+function closeMemeOverlay() {
+  const overlay = $('meme-overlay');
+  const video = $('meme-video');
+  if (!overlay) return;
+
+  overlay.classList.add('hidden');
+
+  if (video) {
+    try { video.pause(); } catch {}
+    video.removeAttribute('src');
+    video.load();
+  }
+  if (memeAudio) {
+    try { memeAudio.pause(); } catch {}
+    memeAudio.currentTime = 0;
+  }
+}
+
+function handleDoNotClick() {
+  const ok = window.confirm('Are you sure that you want to click it?');
+  if (!ok) return;
+
+  // Play sound only once per page load
+  if (!memeSoundHasPlayed) {
+    memeSoundHasPlayed = true;
+    if (!memeAudio) memeAudio = new Audio(MEME_SOUND_SRC);
+    memeAudio.loop = false;
+    memeAudio.currentTime = 0;
+    memeAudio.play().catch(() => {});
+  }
+
+  openMemeOverlay();
+}
+
+// ─────────────────────────────────────────────────────────
 //  HUB – game card grid
 // ─────────────────────────────────────────────────────────
 function renderHub(games) {
@@ -493,6 +551,24 @@ socket.on('vote_update', ({ count, total }) => {
 // ─────────────────────────────────────────────────────────
 //  UI EVENT LISTENERS
 // ─────────────────────────────────────────────────────────
+
+// Temporary meme button (appears in multiple headers)
+document.querySelectorAll('.btn-do-not-click').forEach((btn) => {
+  btn.addEventListener('click', handleDoNotClick);
+});
+
+// Meme overlay close
+if ($('btn-meme-close')) {
+  $('btn-meme-close').addEventListener('click', closeMemeOverlay);
+}
+if ($('meme-overlay')) {
+  $('meme-overlay').addEventListener('click', (e) => {
+    if (e.target === $('meme-overlay')) closeMemeOverlay();
+  });
+}
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeMemeOverlay();
+});
 
 // ── Screen 1: Landing ────────────────────────────────────
 $('btn-landing-continue').addEventListener('click', handleLandingContinue);

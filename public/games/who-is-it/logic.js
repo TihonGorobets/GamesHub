@@ -36,12 +36,12 @@ export function getWritingPrompt() {
   const prompts = [
     'Something embarrassing that happened to you…',
     'A weird talent nobody knows about…',
-    'The strangest food you've ever eaten…',
+    'The strangest food you\'ve ever eaten…',
     'A childhood memory that sounds made up…',
-    'Something you've done that nobody would believe…',
+    'Something you\'ve done that nobody would believe…',
     'An unusual fear you have…',
-    'The weirdest job you've ever had…',
-    'A strange habit you can't explain…',
+    'The weirdest job you\'ve ever had…',
+    'A strange habit you can\'t explain…',
   ];
   return prompts[Math.floor(Math.random() * prompts.length)];
 }

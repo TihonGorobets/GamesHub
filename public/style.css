@@ -411,6 +411,13 @@ h1, h2, h3, h4 {
 }
 .btn-primary:hover { box-shadow: 0 6px 22px rgba(139,92,246,0.6); transform: translateY(-1px); }
 
+.btn-danger {
+  background: linear-gradient(135deg, var(--red), var(--amber));
+  color: #fff;
+  box-shadow: 0 6px 24px rgba(239,68,68,0.25);
+}
+.btn-danger:hover { box-shadow: 0 10px 36px rgba(239,68,68,0.35); transform: translateY(-1px); }
+
 .btn-ghost {
   background: rgba(255,255,255,0.06);
   color: var(--text-primary);
@@ -1103,6 +1110,57 @@ h1, h2, h3, h4 {
   opacity: 0;
   pointer-events: none;
   transform: translateX(-50%) translateY(10px);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MEME OVERLAY (temporary)
+   ═══════════════════════════════════════════════════════════════ */
+.meme-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(10px);
+}
+
+.meme-modal {
+  width: 100%;
+  max-width: 860px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  position: relative;
+}
+
+.meme-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition);
+}
+.meme-close:hover { background: rgba(255,255,255,0.14); }
+
+.meme-video {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #000;
 }
 /* ─── Icons (Flaticon Uicons) ─────────────────────────────── */
 i.fi {
