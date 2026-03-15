@@ -106,7 +106,16 @@ h1, h2, h3, h4 {
   user-select: none;
   animation: floatDrift var(--dur, 28s) linear var(--delay, 0s) infinite;
   opacity: var(--op, 0.55);
+}
+
+.floater-img {
+  display: block;
+  width: 100%;
+  height: auto;
   filter: drop-shadow(0 4px 18px rgba(0,0,0,0.5));
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  will-change: transform;
 }
 /* 8 drift keyframe paths for variety */
 @keyframes floatDrift {
@@ -115,6 +124,15 @@ h1, h2, h3, h4 {
   50%  { transform: translate(var(--dx2,120px),var(--dy2,20px))   rotate(var(--rot2,0deg))  scale(1);    }
   75%  { transform: translate(var(--dx3,60px), var(--dy3,100px))  rotate(var(--rot3,-8deg)) scale(0.97); }
   100% { transform: translate(0, 0)           rotate(var(--rot0, 0deg))   scale(1);    }
+}
+
+@keyframes floaterSpin {
+  from { transform: rotate(var(--spinStart, 0deg)); }
+  to   { transform: rotate(calc(var(--spinStart, 0deg) + 360deg)); }
+}
+
+.floater-img.spin {
+  animation: floaterSpin var(--spinDur, 70s) linear infinite;
 }
 
 /* ─── Music toggle button ────────────────────────────────────── */

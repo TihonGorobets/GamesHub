@@ -92,9 +92,18 @@ const FLOATER_SRCS = [
   '/memes/igor_meme/igor3.png',
 ];
 
+function isFloaterMobile() {
+  return window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
+}
+function rand(min, max) {
+  return min + Math.random() * (max - min);
+}
+
 function spawnFloaters() {
   const container = $('landing-floaters');
   if (!container || container.children.length > 0) return;
+
+  const sizeScale = isFloaterMobile() ? 0.62 : 1;
 
   const configs = [
     // [size, startLeft%, startTop%, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, opacity, rotBase]
@@ -111,13 +120,12 @@ function spawnFloaters() {
   ];
 
   configs.forEach(([size, left, top, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, op, rot0]) => {
-    const img = document.createElement('img');
-    img.src   = FLOATER_SRCS[Math.floor(Math.random() * FLOATER_SRCS.length)];
-    img.alt   = '';
-    img.className = 'floater';
-    img.draggable = false;
-    img.style.cssText = `
-      width: ${size}px;
+    const scaledSize = Math.round(size * sizeScale);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'floater';
+    wrap.style.cssText = `
+      width: ${scaledSize}px;
       left: ${left}%;
       top: ${top}%;
       --dur: ${dur}s;
@@ -131,7 +139,22 @@ function spawnFloaters() {
       --rot2: ${rot0};
       --rot3: ${Math.random() > 0.5 ? '-12deg' : '12deg'};
     `;
-    container.appendChild(img);
+
+    const img = document.createElement('img');
+    img.src = FLOATER_SRCS[Math.floor(Math.random() * FLOATER_SRCS.length)];
+    img.alt = '';
+    img.className = 'floater-img';
+    img.draggable = false;
+
+    // Some floaters spin slowly (smooth, continuous)
+    if (Math.random() < 0.5) {
+      img.classList.add('spin');
+      img.style.setProperty('--spinDur', `${rand(42, 92).toFixed(1)}s`);
+      img.style.setProperty('--spinStart', `${rand(0, 360).toFixed(1)}deg`);
+    }
+
+    wrap.appendChild(img);
+    container.appendChild(wrap);
   });
 }
 
