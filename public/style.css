@@ -995,6 +995,18 @@ h1, h2, h3, h4 {
 .result-vote-verdict.correct { color: var(--green); font-weight: 700; }
 .result-vote-verdict.wrong   { color: var(--red);   font-weight: 700; }
 
+.result-hint {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-top: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.result-hint i.fi { color: var(--purple); }
+
 .scores-mini {
   margin-top: 1rem;
   display: flex;
@@ -1069,6 +1081,122 @@ h1, h2, h3, h4 {
   font-weight: 800;
   font-family: var(--font-heading);
   color: var(--purple);
+}
+
+/* ─── Round History Recap ─────────────────────────────────── */
+.round-history {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.rh-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+.rh-title i.fi { color: var(--purple); }
+.rh-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  animation: slideRight 0.4s ease both;
+}
+.rh-round-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--purple);
+}
+.rh-fact-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.rh-author-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: rgba(139,92,246,0.08);
+  border: 1px solid rgba(139,92,246,0.2);
+  border-radius: var(--radius-sm);
+}
+.rh-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: #fff;
+  flex-shrink: 0;
+}
+.rh-author-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  flex: 1;
+}
+.rh-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 99px;
+}
+.rh-badge.author-badge {
+  background: rgba(139,92,246,0.2);
+  color: var(--purple);
+}
+.rh-votes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.25rem;
+}
+.rh-vote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+}
+.rh-voter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+}
+.rh-voter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.rh-verdict { font-weight: 700; }
+.rh-verdict.correct { color: var(--green); }
+.rh-verdict.wrong   { color: var(--red); }
+.rh-no-votes {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  text-align: center;
+  margin: 0;
 }
 
 /* Scoreboard in header */

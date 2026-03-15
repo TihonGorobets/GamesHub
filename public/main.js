@@ -363,52 +363,33 @@ function showVotingPhase(data) {
 function showResultPhase(data) {
   showPanel('panel-result');
 
-  const author = data.players.find((p) => p.id === data.authorId);
-  if (author) {
-    $('author-avatar').textContent = getInitial(author.name);
-    $('author-avatar').style.background = author.color;
-    $('author-name').textContent = author.name;
+  // Dynamic title: round X of Y
+  const panelTitle = document.querySelector('#panel-result .panel-title');
+  if (panelTitle) {
+    panelTitle.innerHTML =
+      `<i class="fi fi-rr-chart-pie" aria-hidden="true"></i> Round ${data.roundIndex + 1} of ${data.totalFacts} — Results`;
   }
+
+  // Hide author reveal — identity shown only at game over
+  const authorReveal = $('author-reveal');
+  if (authorReveal) authorReveal.classList.add('hidden');
 
   $('result-fact-text').textContent = data.factText;
 
-  const voteList = $('result-vote-list');
-  const eligibleTotal = Math.max(0, data.players.length - 1);
-  const castCount = data.votes
-    ? Object.keys(data.votes).filter((voterId) => voterId !== data.authorId).length
-    : 0;
-  const correctCount = data.votes
-    ? Object.entries(data.votes).filter(([voterId, votedId]) => voterId !== data.authorId && votedId === data.authorId).length
-    : 0;
+  // Use server-provided aggregates (no individual votes sent)
+  const eligibleTotal = data.totalEligible ?? Math.max(0, data.players.length - 1);
+  const castCount     = data.castCount     ?? 0;
+  const correctCount  = data.correctCount  ?? 0;
   const correctPct = eligibleTotal > 0 ? Math.round((correctCount / eligibleTotal) * 100) : 0;
-  const castPct = eligibleTotal > 0 ? Math.round((castCount / eligibleTotal) * 100) : 0;
+  const castPct    = eligibleTotal > 0 ? Math.round((castCount    / eligibleTotal) * 100) : 0;
 
-  if (data.votes && Object.keys(data.votes).length > 0) {
-    voteList.innerHTML = `
-      <div class="result-summary">
-        <span><i class="fi fi-rr-target" aria-hidden="true"></i> Correct: ${correctCount}/${eligibleTotal} (${correctPct}%)</span>
-        <span><i class="fi fi-rr-check-circle" aria-hidden="true"></i> Votes: ${castCount}/${eligibleTotal} (${castPct}%)</span>
-      </div>
-    ` + Object.entries(data.votes).map(([voterId, votedId]) => {
-      const voter   = data.players.find((p) => p.id === voterId);
-      const correct = votedId === data.authorId;
-      return `
-        <div class="result-vote-row">
-          <span class="result-vote-guesser">${voter ? escHtml(voter.name) : 'Someone'}</span>
-          <span class="result-vote-verdict ${correct ? 'correct' : 'wrong'}">
-            ${correct ? '<i class="fi fi-rr-check"></i> Correct +1' : '<i class="fi fi-rr-cross-small"></i> Wrong'}
-          </span>
-        </div>`;
-    }).join('');
-  } else {
-    voteList.innerHTML = `
-      <div class="result-summary">
-        <span><i class="fi fi-rr-target" aria-hidden="true"></i> Correct: 0/${eligibleTotal} (0%)</span>
-        <span><i class="fi fi-rr-check-circle" aria-hidden="true"></i> Votes: 0/${eligibleTotal} (0%)</span>
-      </div>
-      <p style="text-align:center;color:var(--text-dim);font-size:0.85rem">No votes were cast.</p>
-    `;
-  }
+  $('result-vote-list').innerHTML = `
+    <div class="result-summary">
+      <span><i class="fi fi-rr-target" aria-hidden="true"></i> Guessed correctly: ${correctCount}/${eligibleTotal} (${correctPct}%)</span>
+      <span><i class="fi fi-rr-check-circle" aria-hidden="true"></i> Participated: ${castCount}/${eligibleTotal} (${castPct}%)</span>
+    </div>
+    <p class="result-hint"><i class="fi fi-rr-lock" aria-hidden="true"></i> Author &amp; votes revealed at end of game!</p>
+  `;
 
   $('result-scores').innerHTML = data.players
     .slice()
@@ -451,6 +432,44 @@ function showGameOverPhase(data) {
 
   const isHost = state.room && state.room.host === socket.id;
   $('game-over-host-controls').classList.toggle('hidden', !isHost);
+
+  // ── Round-by-round recap reveal ───────────────────────
+  const rhEl = $('round-history');
+  if (rhEl && data.roundHistory && data.roundHistory.length > 0) {
+    rhEl.innerHTML = `
+      <h3 class="rh-title"><i class="fi fi-rr-bulb" aria-hidden="true"></i> Who wrote what?</h3>
+      ${data.roundHistory.map((r, i) => `
+        <div class="rh-card" style="animation-delay:${i * 0.08}s">
+          <div class="rh-round-badge">Round ${r.roundIndex + 1}</div>
+          <div class="rh-fact-text">&ldquo;${escHtml(r.factText)}&rdquo;</div>
+          <div class="rh-author-row">
+            <div class="rh-dot" style="background:${r.authorColor}">${getInitial(r.authorName)}</div>
+            <span class="rh-author-name">${escHtml(r.authorName)}</span>
+            <span class="rh-badge author-badge">author</span>
+          </div>
+          ${r.votes.length > 0 ? `
+            <div class="rh-votes">
+              ${r.votes.map((v) => `
+                <div class="rh-vote-row">
+                  <span class="rh-voter">
+                    <span class="rh-voter-dot" style="background:${v.voterColor}"></span>
+                    ${escHtml(v.voterName)}
+                  </span>
+                  <span class="rh-verdict ${v.correct ? 'correct' : 'wrong'}">
+                    ${v.correct
+                      ? '<i class="fi fi-rr-check"></i> guessed right!'
+                      : `<i class="fi fi-rr-cross-small"></i> voted <strong>${escHtml(v.votedName)}</strong>`}
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<p class="rh-no-votes">No votes cast this round</p>'}
+        </div>
+      `).join('')}
+    `;
+  } else if (rhEl) {
+    rhEl.innerHTML = '';
+  }
 }
 
 // ─────────────────────────────────────────────────────────

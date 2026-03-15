@@ -69,6 +69,7 @@ class WhoIsItState {
     this.currentFact      = null;    // { authorId, text, index }
     this.votes            = {};      // socketId -> voted socketId
     this.eligibleVoterIds = new Set(); // snapshot of eligible voter IDs for the current round
+    this.roundHistory     = [];      // accumulated per-round data for the final reveal
     this.roundIndex       = 0;
     this.timeLeft         = WRITING_TIME;
     this._timer           = null;
@@ -197,7 +198,8 @@ function revealResult(io, room) {
   // ── Award points ────────────────────────────────────
   const authorId = gs.currentFact.authorId;
   const author   = room.players.find((p) => p.id === authorId);
-  let fooledCount = 0;
+  let fooledCount  = 0;
+  let correctCount = 0;
 
   Object.entries(gs.votes).forEach(([voterId, votedId]) => {
     if (voterId === authorId) return; // author can't vote for themselves
@@ -206,6 +208,7 @@ function revealResult(io, room) {
       // Correct guess
       const guesser = room.players.find((p) => p.id === voterId);
       if (guesser) guesser.score += POINTS_CORRECT_GUESS;
+      correctCount++;
     } else {
       // Author fooled this player
       fooledCount++;
@@ -214,11 +217,41 @@ function revealResult(io, room) {
 
   if (author) author.score += fooledCount * POINTS_FOOL_PLAYERS;
 
+  // ── Build history entry for the final game-over reveal ─
+  const totalEligible = gs.eligibleVoterIds.size;
+  const castCount     = Object.keys(gs.votes).filter((id) => id !== authorId).length;
+
+  gs.roundHistory.push({
+    roundIndex:  gs.roundIndex,
+    factText:    gs.currentFact.text,
+    authorId,
+    authorName:  author ? author.name  : '?',
+    authorColor: author ? author.color : '#888',
+    votes: Object.entries(gs.votes)
+      .filter(([vid]) => vid !== authorId)
+      .map(([vid, tid]) => {
+        const voter = room.players.find((p) => p.id === vid);
+        const voted = room.players.find((p) => p.id === tid);
+        return {
+          voterName:  voter ? voter.name  : '?',
+          voterColor: voter ? voter.color : '#888',
+          votedName:  voted ? voted.name  : '?',
+          correct: tid === authorId,
+        };
+      }),
+  });
+
   gs.phase = 'RESULT_REVEAL';
 
+  // Emit stats only — author identity is hidden until game over
   io.to(room.id).emit('phase_changed', {
     phase: 'RESULT_REVEAL',
-    data:  gs.publicData(true), // include author reveal
+    data: {
+      ...gs.publicData(false),
+      totalEligible,
+      castCount,
+      correctCount,
+    },
   });
 
   // Auto-advance after REVEAL_TIME
@@ -244,6 +277,7 @@ function endGame(io, room) {
       phase:        'GAME_OVER',
       finalScores:  sorted.map((p) => ({ id: p.id, name: p.name, color: p.color, score: p.score })),
       winner:       sorted[0],
+      roundHistory: gs.roundHistory,
     },
   });
 }
