@@ -105,21 +105,33 @@ function spawnFloaters() {
 
   const sizeScale = isFloaterMobile() ? 0.62 : 1;
 
+  // Columns:  size  L%  T%   dx1      dy1      dx2       dy2      dx3      dy3      dur delay  op   z
+  // Paths are pure-translation. Each floater occupies its own screen region
+  // with movement that steers it away from neighbours' paths.
   const configs = [
-    // [size, startLeft%, startTop%, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, opacity, rotBase]
-    [130,  8,  15, '70px',  '-90px', '130px', '30px',  '70px',  '120px', 34, 0,    0.55, '-6deg'],
-    [105, 78,  10, '-80px', '-60px', '-140px','40px',  '-80px', '110px', 29, 3,    0.50, '5deg'],
-    [155, 85,  55, '-90px', '-80px', '-160px','-20px', '-90px', '60px',  38, 7,    0.58, '0deg'],
-    [95,  12,  70, '80px',  '-70px', '130px', '-10px', '80px',  '80px',  32, 12,   0.45, '8deg'],
-    [120, 50,   5, '60px',  '80px',  '110px', '160px', '60px',  '220px', 42, 5,    0.55, '-4deg'],
-    [140, 30,  80, '-70px', '-100px','-100px','-180px','-70px', '-260px',36, 9,    0.50, '7deg'],
-    [88,  65,  88, '50px',  '-80px', '-20px', '-150px','50px',  '-230px',30, 16,   0.42, '-8deg'],
-    [125, 20,  40, '-60px', '70px',  '-110px','140px', '-60px', '220px', 44, 2,    0.55, '4deg'],
-    [100, 90,  75, '-80px', '-50px', '-150px','20px',  '-80px', '90px',  33, 18,   0.48, '-5deg'],
-    [160, 45,  45, '50px',  '-70px', '30px',  '-130px','50px',  '-200px',50, 8,    0.40, '3deg'],
+    // top-left corner, drifts right + down
+    [130,  4,   8,  '160px',  '100px',  '220px',  '30px',  '160px',  '180px',  34, 0,  0.55, 2],
+    // top-right corner, drifts left + down
+    [105, 80,   8, '-130px',   '70px', '-200px',  '20px', '-130px',  '160px',  29, 3,  0.50, 4],
+    // mid-right, drifts left + up strongly
+    [155, 82,  44, '-180px', '-110px', '-240px', '-30px', '-180px', '-200px',  38, 7,  0.58, 1],
+    // bottom-left, drifts right + up
+    [ 95,  6,  74,  '150px', '-120px',  '210px', '-30px',  '150px', '-200px',  32, 12, 0.45, 3],
+    // top-center, drifts down + right
+    [120, 44,   3,   '80px',  '170px',  '120px', '260px',   '80px',  '350px',  42, 5,  0.55, 5],
+    // bottom-center, drifts up + left
+    [140, 38,  82,  '-80px', '-170px', '-120px', '-260px', '-80px', '-350px',  36, 9,  0.50, 2],
+    // mid-left, drifts right + up
+    [ 88, 10,  50,  '180px', '-100px',  '270px', '-10px',  '180px', '-170px',  30, 16, 0.42, 4],
+    // bottom-right, drifts left + up
+    [125, 76,  78, '-160px', '-100px', '-240px', '-30px', '-160px', '-180px',  44, 2,  0.55, 1],
+    // far-right mid-low, drifts left heavily
+    [100, 88,  60, '-200px',  '-60px', '-300px',  '50px', '-200px',  '130px',  33, 18, 0.48, 3],
+    // center, drifts out and back in opposite arc
+    [160, 42,  38,   '60px', '-160px',  '-80px', '-220px',  '60px', '-300px',  50, 8,  0.40, 5],
   ];
 
-  configs.forEach(([size, left, top, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, op, rot0]) => {
+  configs.forEach(([size, left, top, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, op, zLayer]) => {
     const scaledSize = Math.round(size * sizeScale);
 
     const wrap = document.createElement('div');
@@ -128,16 +140,13 @@ function spawnFloaters() {
       width: ${scaledSize}px;
       left: ${left}%;
       top: ${top}%;
+      z-index: ${zLayer};
       --dur: ${dur}s;
       --delay: -${delay}s;
       --op: ${op};
-      --rot0: ${rot0};
       --dx1: ${dx1}; --dy1: ${dy1};
       --dx2: ${dx2}; --dy2: ${dy2};
       --dx3: ${dx3}; --dy3: ${dy3};
-      --rot1: ${Math.random() > 0.5 ? '10deg' : '-10deg'};
-      --rot2: ${rot0};
-      --rot3: ${Math.random() > 0.5 ? '-12deg' : '12deg'};
     `;
 
     const img = document.createElement('img');
