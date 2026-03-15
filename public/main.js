@@ -45,10 +45,16 @@ let musicStarted   = false;
 
 function startLandingMusic() {
   if (!landingMusic) return;
+  if (musicMuted) return;
   landingMusic.volume = 0.35;
   const p = landingMusic.play();
-  if (p && p.catch) p.catch(() => {}); // suppress autoplay-blocked errors
-  musicStarted = true;
+  // Promise resolves only if playback actually starts (autoplay may be blocked)
+  if (p && p.then) {
+    p.then(() => { musicStarted = true; }).catch(() => { musicStarted = false; });
+  } else {
+    // Older browsers may not return a promise
+    musicStarted = !landingMusic.paused;
+  }
 }
 function stopLandingMusic() {
   if (!landingMusic) return;
@@ -73,7 +79,7 @@ if (btnMusicToggle) {
     if (landingMusic) landingMusic.muted = musicMuted;
     updateMusicIcon();
     // If we haven't started yet (autoplay blocked), start now on interaction
-    if (!musicMuted && !musicStarted) startLandingMusic();
+    if (!musicMuted && landingMusic && landingMusic.paused) startLandingMusic();
   });
 }
 
@@ -154,7 +160,7 @@ spawnFloaters();
 startLandingMusic();
 // If autoplay was blocked by the browser, start on first interaction
 const _startOnInteract = () => {
-  if (!musicStarted && !musicMuted) startLandingMusic();
+  if (!musicMuted && landingMusic && landingMusic.paused) startLandingMusic();
   window.removeEventListener('pointerdown', _startOnInteract);
   window.removeEventListener('keydown',     _startOnInteract);
 };
