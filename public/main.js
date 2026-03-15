@@ -468,6 +468,14 @@ function updateLobby(room) {
 // ─────────────────────────────────────────────────────────
 function enterGame(room) {
   state.room = room;
+
+  // Route to the correct game screen
+  if (state.selectedGameId === 'drawing-dash') {
+    enterDrawingDash(room);
+    return;
+  }
+
+  // Default: Who Is It?
   $('game-room-code').textContent = room.id;
   renderScoreboard(room.players);
   showScreen('game');
@@ -688,6 +696,500 @@ function submitVote(playerId) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  DRAWING DASH  –  client-side logic
+// ─────────────────────────────────────────────────────────
+
+// Palette colours available to the drawer
+const DD_PALETTE = [
+  '#ffffff','#d4d4d4','#737373','#171717',
+  '#ef4444','#f97316','#eab308','#22c55e',
+  '#06b6d4','#3b82f6','#8b5cf6','#ec4899',
+  '#b45309','#065f46','#1e3a5f','#4a044e',
+];
+
+// Local drawing state
+const dd = {
+  canvas:    null,
+  ctx:       null,
+  isDrawer:  false,
+  tool:      'brush',  // brush | eraser | fill
+  color:     '#171717',
+  size:      10,
+  drawing:   false,
+  lastX:     0,
+  lastY:     0,
+  roundTime: 80,    // updated from server
+  totalTime: 80,
+};
+
+// ── Enter the Drawing Dash screen ───────────────────────────
+function enterDrawingDash(room) {
+  state.room = room;
+  $('dd-room-code').textContent = room.id;
+  showScreen('drawing-dash');
+
+  // One-time canvas setup
+  if (!dd.canvas) {
+    dd.canvas = $('dd-canvas');
+    dd.ctx    = dd.canvas.getContext('2d');
+    ddClearCanvas();
+    ddInitToolbar();
+    ddInitCanvas();
+  }
+}
+
+// ── Clear the canvas to white ───────────────────────────────
+function ddClearCanvas() {
+  if (!dd.ctx) return;
+  dd.ctx.clearRect(0, 0, 800, 600);
+  dd.ctx.fillStyle = '#ffffff';
+  dd.ctx.fillRect(0, 0, 800, 600);
+}
+
+// ── Coordinate mapping (CSS-scaled canvas → logical 800×600) ─
+function ddCanvasXY(e) {
+  const rect   = dd.canvas.getBoundingClientRect();
+  const scaleX = 800 / rect.width;
+  const scaleY = 600 / rect.height;
+  const src    = e.touches ? e.touches[0] : e;
+  return {
+    x: Math.round((src.clientX - rect.left) * scaleX),
+    y: Math.round((src.clientY - rect.top)  * scaleY),
+  };
+}
+
+// ── Canvas pointer/touch events (drawer only) ───────────────
+function ddInitCanvas() {
+  const c = dd.canvas;
+
+  // Helper to begin a stroke
+  const onDown = (e) => {
+    if (!dd.isDrawer) return;
+    e.preventDefault();
+    const { x, y } = ddCanvasXY(e);
+
+    if (dd.tool === 'fill') {
+      ddDoFill(x, y, dd.color);
+      socket.emit('dd_draw', { type: 'fill', x, y, color: dd.color });
+      return;
+    }
+    dd.drawing = true;
+    dd.lastX = x; dd.lastY = y;
+    socket.emit('dd_draw', { type: 'begin', x, y, color: ddEffectiveColor(), size: dd.size });
+    ddApplyDraw({ type: 'begin', x, y, color: ddEffectiveColor(), size: dd.size });
+  };
+
+  const onMove = (e) => {
+    if (!dd.isDrawer || !dd.drawing) return;
+    e.preventDefault();
+    const { x, y } = ddCanvasXY(e);
+    const ev = { type: 'move', x, y, color: ddEffectiveColor(), size: dd.size };
+    socket.emit('dd_draw', ev);
+    ddApplyDraw(ev);
+  };
+
+  const onUp = (e) => {
+    if (!dd.drawing) return;
+    dd.drawing = false;
+    socket.emit('dd_draw', { type: 'end' });
+    ddApplyDraw({ type: 'end' });
+  };
+
+  c.addEventListener('pointerdown', onDown);
+  c.addEventListener('pointermove', onMove);
+  c.addEventListener('pointerup',   onUp);
+  c.addEventListener('pointerleave', onUp);
+}
+
+function ddEffectiveColor() {
+  return dd.tool === 'eraser' ? '#ffffff' : dd.color;
+}
+
+// ── Apply a draw event to the canvas ────────────────────────
+function ddApplyDraw(ev) {
+  if (!dd.ctx) return;
+  const ctx = dd.ctx;
+
+  if (ev.type === 'clear') { ddClearCanvas(); return; }
+
+  if (ev.type === 'fill') {
+    ddDoFill(ev.x, ev.y, ev.color);
+    return;
+  }
+
+  if (ev.type === 'begin') {
+    ctx.beginPath();
+    ctx.moveTo(ev.x, ev.y);
+    ctx.strokeStyle = ev.color;
+    ctx.lineWidth   = ev.size;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    return;
+  }
+
+  if (ev.type === 'move') {
+    ctx.strokeStyle = ev.color;
+    ctx.lineWidth   = ev.size;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    ctx.lineTo(ev.x, ev.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ev.x, ev.y);
+    return;
+  }
+
+  if (ev.type === 'end') {
+    ctx.beginPath();
+    return;
+  }
+}
+
+// ── Flood fill ───────────────────────────────────────────────
+function ddDoFill(startX, startY, hexColor) {
+  const ctx    = dd.ctx;
+  const width  = 800;
+  const height = 600;
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data    = imgData.data;
+
+  const r = parseInt(hexColor.slice(1, 3), 16);
+  const g = parseInt(hexColor.slice(3, 5), 16);
+  const b = parseInt(hexColor.slice(5, 7), 16);
+
+  const idx = (Math.round(startY) * width + Math.round(startX)) * 4;
+  const tr  = data[idx], tg = data[idx + 1], tb = data[idx + 2];
+
+  if (tr === r && tg === g && tb === b) return; // already target colour
+
+  const stack = [Math.round(startX), Math.round(startY)];
+  const visited = new Uint8Array(width * height);
+
+  function getIdx(x, y) { return (y * width + x) * 4; }
+
+  while (stack.length) {
+    const cy = stack.pop();
+    const cx = stack.pop();
+    if (cx < 0 || cx >= width || cy < 0 || cy >= height) continue;
+    const vi = cy * width + cx;
+    if (visited[vi]) continue;
+    const pi = vi * 4;
+    if (data[pi] !== tr || data[pi + 1] !== tg || data[pi + 2] !== tb) continue;
+    visited[vi] = 1;
+    data[pi] = r; data[pi + 1] = g; data[pi + 2] = b; data[pi + 3] = 255;
+    stack.push(cx + 1, cy, cx - 1, cy, cx, cy + 1, cx, cy - 1);
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+// ── Build drawing toolbar ────────────────────────────────────
+function ddInitToolbar() {
+  // Palette swatches
+  const palette = $('dd-palette');
+  if (palette) {
+    palette.innerHTML = DD_PALETTE.map((c) => `
+      <div class="dd-color-swatch${c === dd.color ? ' active' : ''}" data-color="${c}"
+           style="background:${c};${c === '#ffffff' ? 'border:1px solid #ccc;' : ''}"
+           title="${c}"></div>
+    `).join('');
+    palette.querySelectorAll('.dd-color-swatch').forEach((s) => {
+      s.addEventListener('click', () => {
+        dd.color = s.dataset.color;
+        palette.querySelectorAll('.dd-color-swatch').forEach((el) => el.classList.remove('active'));
+        s.classList.add('active');
+        if (dd.tool !== 'fill') ddSetTool('brush');
+      });
+    });
+  }
+
+  // Tool buttons
+  document.querySelectorAll('.dd-tool-btn[data-tool]').forEach((btn) => {
+    btn.addEventListener('click', () => ddSetTool(btn.dataset.tool));
+  });
+
+  // Size buttons
+  document.querySelectorAll('.dd-size-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      dd.size = parseInt(btn.dataset.size, 10);
+      document.querySelectorAll('.dd-size-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Clear button
+  const clearBtn = $('dd-tool-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      ddClearCanvas();
+      socket.emit('dd_draw', { type: 'clear' });
+    });
+  }
+}
+
+function ddSetTool(tool) {
+  dd.tool = tool;
+  document.querySelectorAll('.dd-tool-btn[data-tool]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tool === tool);
+  });
+  if (dd.canvas) dd.canvas.style.cursor = (tool === 'fill') ? 'cell' : 'crosshair';
+}
+
+// ── Update timer ring ────────────────────────────────────────
+const DD_ARC_LEN = 2 * Math.PI * 18; // 113.097…
+function ddSetTimer(timeLeft, totalTime) {
+  const arc = $('dd-timer-arc');
+  const num = $('dd-timer-num');
+  if (!arc || !num) return;
+  const frac  = Math.max(0, timeLeft / totalTime);
+  arc.style.strokeDashoffset = ((1 - frac) * DD_ARC_LEN).toFixed(2);
+  arc.classList.toggle('danger', frac < 0.25);
+  num.textContent = Math.max(0, Math.round(timeLeft));
+}
+
+// ── Render player list (sidebar) ────────────────────────────
+function ddRenderPlayers(players, drawerId) {
+  const el = $('dd-players-list');
+  if (!el) return;
+  el.innerHTML = players
+    .slice()
+    .sort((a, b) => b.score - a.score)
+    .map((p) => {
+      const isDrawer  = p.id === drawerId;
+      const guessed   = state._ddGuessedIds && state._ddGuessedIds.includes(p.id);
+      let tag = '';
+      if (isDrawer) tag = '<span class="dd-player-tag drawing">✏️</span>';
+      else if (guessed) tag = '<span class="dd-player-tag guessed">✓</span>';
+      return `
+        <div class="dd-player-row${isDrawer ? ' is-drawer' : ''}${guessed ? ' has-guessed' : ''}">
+          <div class="dd-player-avatar" style="background:${p.color}">${escHtml(p.name[0].toUpperCase())}</div>
+          <span class="dd-player-name">${escHtml(p.name)}${p.id === socket.id ? ' <span style="opacity:.5">(you)</span>' : ''}</span>
+          <span class="dd-player-score">${p.score}</span>
+          ${tag}
+        </div>`;
+    }).join('');
+}
+
+// ── Append a chat message ───────────────────────────────────
+function ddAddChat(msg) {
+  const log = $('dd-chat-log');
+  if (!log) return;
+  const div = document.createElement('div');
+
+  if (msg.isSystem) {
+    div.className = 'dd-chat-msg system' + (msg.isCorrect ? ' correct' : '');
+    div.textContent = msg.text;
+  } else {
+    div.className = 'dd-chat-msg' +
+      (msg.isClose       ? ' close'           : '') +
+      (msg.alreadyGuessed ? ' guessed-already' : '');
+    div.innerHTML = `<span class="msg-name" style="color:${msg.color || '#8b5cf6'}">${escHtml(msg.name)}</span>${escHtml(msg.text)}`;
+    if (msg.isClose) div.innerHTML += ' <em style="font-size:.72em;opacity:.8">(close!)</em>';
+  }
+
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── Word-hint display (underscores + letters) ────────────────
+function ddSetWordHint(hint, word) {
+  const el = $('dd-word-hint');
+  if (!el) return;
+  if (word) {
+    // Drawer sees the actual word
+    el.textContent = word.toUpperCase();
+    el.style.color = 'var(--primary)';
+  } else if (hint) {
+    el.textContent = hint.split('').join(' ').replace(/_/g, '＿');
+    el.style.color = '';
+  } else {
+    el.textContent = '';
+  }
+}
+
+// ── Phase handlers ───────────────────────────────────────────
+
+function showDDPickingWord(data) {
+  state._ddGuessedIds = [];
+  dd.isDrawer = (socket.id === data.drawerId);
+
+  ddSetTimer(data.timeLeft, 15);
+  ddSetWordHint('', '');
+  $('dd-round-label').textContent =
+    `Round ${data.currentRound}/${data.totalRounds}  —  Turn ${data.turnIndex + 1}/${data.totalTurns}`;
+
+  ddRenderPlayers(data.players, data.drawerId);
+
+  // Clear canvas for new round
+  ddClearCanvas();
+
+  const waiting = $('dd-canvas-waiting');
+  const waitText = $('dd-canvas-waiting-text');
+  waiting.classList.remove('hidden');
+  if (waitText) waitText.textContent = `${escHtml(data.drawerName)} is choosing a word…`;
+
+  $('dd-tools').classList.add('hidden');
+
+  // Disable chat during word picking
+  const chatInput = $('dd-chat-input');
+  const chatSend  = $('dd-chat-send');
+  if (chatInput) { chatInput.disabled = true; chatInput.placeholder = 'Waiting for drawer…'; }
+  if (chatSend)  chatSend.disabled = true;
+
+  // Hide overlays
+  $('dd-overlay-round-end').classList.add('hidden');
+  $('dd-overlay-game-over').classList.add('hidden');
+
+  if (dd.isDrawer) {
+    // Show word-choice overlay (words come in dd_word_choices event)
+    $('dd-overlay-picking').classList.remove('hidden');
+    $('dd-pick-seconds').textContent = data.timeLeft;
+  } else {
+    $('dd-overlay-picking').classList.add('hidden');
+  }
+}
+
+function showDDDrawing(data) {
+  state._ddGuessedIds = data.youGuessed ? [socket.id] : [];
+  dd.isDrawer = data.isDrawer;
+  dd.roundTime = 80;
+
+  $('dd-overlay-picking').classList.add('hidden');
+  $('dd-overlay-round-end').classList.add('hidden');
+  $('dd-canvas-waiting').classList.add('hidden');
+
+  ddSetTimer(data.timeLeft, 80);
+  ddSetWordHint(data.hint, data.isDrawer ? data.word : null);
+  $('dd-round-label').textContent =
+    `Round ${data.currentRound}/${data.totalRounds}  —  Turn ${data.turnIndex + 1}/${data.totalTurns}`;
+
+  ddRenderPlayers(data.players, data.drawerId);
+
+  $('dd-tools').classList.toggle('hidden', !dd.isDrawer);
+  dd.canvas.style.pointerEvents = dd.isDrawer ? 'auto' : 'none';
+
+  const chatInput = $('dd-chat-input');
+  const chatSend  = $('dd-chat-send');
+  if (dd.isDrawer) {
+    if (chatInput) { chatInput.disabled = true; chatInput.placeholder = 'You are drawing…'; }
+    if (chatSend)  chatSend.disabled = true;
+  } else {
+    if (chatInput) { chatInput.disabled = data.youGuessed; chatInput.placeholder = data.youGuessed ? 'You guessed it!' : 'Guess the word…'; }
+    if (chatSend)  chatSend.disabled = data.youGuessed;
+  }
+
+  // Replay cached chat history
+  if (data.chatHistory && data.chatHistory.length) {
+    const log = $('dd-chat-log');
+    if (log) {
+      log.innerHTML = '';
+      data.chatHistory.forEach((m) => ddAddChat(m));
+    }
+  }
+}
+
+function showDDRoundEnd(data) {
+  $('dd-overlay-round-end').classList.remove('hidden');
+  $('dd-overlay-picking').classList.add('hidden');
+  $('dd-tools').classList.add('hidden');
+  dd.canvas.style.pointerEvents = 'none';
+
+  const chatInput = $('dd-chat-input');
+  const chatSend  = $('dd-chat-send');
+  if (chatInput) { chatInput.disabled = true; }
+  if (chatSend)  chatSend.disabled = true;
+
+  $('dd-reveal-word').textContent = (data.word || '').toUpperCase();
+
+  $('dd-round-drawer-row').innerHTML =
+    `<div class="dd-player-avatar" style="background:${data.drawerColor};width:24px;height:24px;font-size:.65rem;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff">${escHtml(data.drawerName[0].toUpperCase())}</div>
+     <span>${escHtml(data.drawerName)} was drawing</span>`;
+
+  const guessedEl = $('dd-round-guessed');
+  if (guessedEl) {
+    if (data.guessedBy && data.guessedBy.length) {
+      guessedEl.innerHTML = data.guessedBy.map((g) =>
+        `<span class="dd-guessed-chip" style="background:${g.color}">${escHtml(g.name)}</span>`
+      ).join('');
+    } else {
+      guessedEl.innerHTML = '<em style="color:var(--text-dim);font-size:.82rem">Nobody guessed it</em>';
+    }
+  }
+
+  const scoresEl = $('dd-round-scores');
+  if (scoresEl && data.players) {
+    scoresEl.innerHTML = [...data.players]
+      .sort((a, b) => b.score - a.score)
+      .map((p) => `
+        <div class="dd-score-row">
+          <div style="width:10px;height:10px;border-radius:50%;background:${p.color};flex-shrink:0;"></div>
+          <span style="flex:1">${escHtml(p.name)}</span>
+          <span class="score-pts">${p.score} pts</span>
+        </div>`
+      ).join('');
+  }
+
+  ddRenderPlayers(data.players, data.drawerId);
+
+  // Countdown display
+  let cd = 7;
+  $('dd-advance-cd').textContent = cd;
+  const cdI = setInterval(() => {
+    cd--;
+    const el = $('dd-advance-cd');
+    if (el) el.textContent = cd;
+    if (cd <= 0) clearInterval(cdI);
+  }, 1000);
+}
+
+function showDDGameOver(data) {
+  $('dd-overlay-round-end').classList.add('hidden');
+  $('dd-overlay-picking').classList.add('hidden');
+  $('dd-overlay-game-over').classList.remove('hidden');
+
+  const rankClass = ['rank-gold','rank-silver','rank-bronze'];
+  $('dd-leaderboard').innerHTML = data.finalScores.map((p, i) => `
+    <div class="leaderboard-row" style="animation-delay:${i * 0.1}s">
+      <span class="leaderboard-rank">${i < 3 ? `<i class="fi fi-sr-trophy ${rankClass[i]}"></i>` : i + 1}</span>
+      <div class="player-avatar-circle" style="background:${p.color};width:32px;height:32px;font-size:.85rem">${escHtml(p.name[0].toUpperCase())}</div>
+      <span class="leaderboard-name">${escHtml(p.name)}</span>
+      <span class="leaderboard-score">${p.score} pts</span>
+    </div>`
+  ).join('');
+
+  // Round history
+  const rhEl = $('dd-round-history');
+  if (rhEl && data.roundHistory && data.roundHistory.length) {
+    rhEl.innerHTML = `
+      <h3 class="rh-title"><i class="fi fi-rr-gallery" aria-hidden="true"></i> Round recap</h3>
+      ${data.roundHistory.map((r, i) => `
+        <div class="rh-card" style="animation-delay:${i * 0.06}s">
+          <div class="rh-round-badge">Turn ${i + 1}</div>
+          <div class="rh-author-row">
+            <div class="rh-dot" style="background:${r.drawerColor}">${r.drawerName[0].toUpperCase()}</div>
+            <span class="rh-author-name">${escHtml(r.drawerName)}</span>
+            <span class="rh-badge author-badge">drew</span>
+            <strong style="margin-left:.3rem">${escHtml(r.word.toUpperCase())}</strong>
+          </div>
+          ${
+            r.guessedBy.length
+              ? `<div class="rh-votes">${r.guessedBy.map((g, gi) =>
+                  `<div class="rh-vote-row">
+                    <span class="rh-voter"><span class="rh-voter-dot" style="background:${g.color}"></span>${escHtml(g.name)}</span>
+                    <span class="rh-verdict correct">#${gi + 1} guessed right!</span>
+                  </div>`).join('')}</div>`
+              : '<p class="rh-no-votes">Nobody guessed it</p>'
+          }
+        </div>`
+      ).join('')}`;
+  } else if (rhEl) {
+    rhEl.innerHTML = '';
+  }
+
+  const isHost = state.room && state.room.host === socket.id;
+  $('dd-game-over-host').classList.toggle('hidden', !isHost);
+}
+
+// ─────────────────────────────────────────────────────────
 //  SOCKET EVENTS
 // ─────────────────────────────────────────────────────────
 socket.on('connect', () => {
@@ -710,6 +1212,22 @@ socket.on('player_left', ({ playerId, room }) => {
 });
 
 socket.on('phase_changed', ({ phase, data }) => {
+  // ── Drawing Dash phases ──────────────────────────────────────
+  if (phase.startsWith('DD_')) {
+    if (!$('screen-drawing-dash').classList.contains('active')) {
+      enterDrawingDash(state.room);
+    }
+    if (data.players) state.room.players = data.players;
+    switch (phase) {
+      case 'DD_PICKING_WORD': showDDPickingWord(data); break;
+      case 'DD_DRAWING':      showDDDrawing(data);     break;
+      case 'DD_ROUND_END':    showDDRoundEnd(data);    break;
+      case 'DD_GAME_OVER':    showDDGameOver(data);    break;
+    }
+    return;
+  }
+
+  // ── Who Is It? phases ────────────────────────────────────────
   if (!$('screen-game').classList.contains('active')) {
     enterGame(state.room);
   }
@@ -728,8 +1246,16 @@ socket.on('phase_changed', ({ phase, data }) => {
 });
 
 socket.on('timer_tick', ({ timeLeft, phase }) => {
+  // Who Is It?
   if (phase === 'WRITING_FACTS') updateTimerBar('timer-bar-writing', timeLeft, 60);
   if (phase === 'VOTING')        updateTimerBar('timer-bar-voting',  timeLeft, 30);
+  // Drawing Dash
+  if (phase === 'DD_PICKING_WORD') {
+    ddSetTimer(timeLeft, 15);
+    const el = $('dd-pick-seconds');
+    if (el) el.textContent = timeLeft;
+  }
+  if (phase === 'DD_DRAWING') ddSetTimer(timeLeft, 80);
 });
 
 socket.on('fact_submitted', ({ count, total }) => {
@@ -740,6 +1266,50 @@ socket.on('fact_submitted', ({ count, total }) => {
 socket.on('vote_update', ({ count, total }) => {
   const el = $('votes-count');
   if (el) el.textContent = ` (${count}/${total} voted)`;
+});
+
+// ── Drawing Dash socket events ───────────────────────────────
+
+socket.on('dd_word_choices', ({ words }) => {
+  // Populate the word-choice overlay for the drawer
+  const el = $('dd-word-choices');
+  if (!el) return;
+  el.innerHTML = words.map((w, i) => `
+    <button class="dd-word-btn" data-idx="${i}">${escHtml(w.toUpperCase())}</button>
+  `).join('');
+  el.querySelectorAll('.dd-word-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      socket.emit('dd_choose_word', { wordIndex: parseInt(btn.dataset.idx, 10) });
+      $('dd-overlay-picking').classList.add('hidden');
+    });
+  });
+});
+
+socket.on('dd_draw', (ev) => {
+  // Remote draw events from the drawer
+  ddApplyDraw(ev);
+});
+
+socket.on('dd_chat_message', (msg) => {
+  ddAddChat(msg);
+});
+
+socket.on('dd_hint', ({ hint }) => {
+  ddSetWordHint(hint, null);
+  showToast('🔍 A hint was revealed!', 1800);
+});
+
+socket.on('dd_player_guessed', ({ playerId, name, rank, score, players }) => {
+  if (!state._ddGuessedIds) state._ddGuessedIds = [];
+  if (!state._ddGuessedIds.includes(playerId)) state._ddGuessedIds.push(playerId);
+  if (players) ddRenderPlayers(players, state.room ? state.room.gameState?.drawerId : null);
+  if (playerId === socket.id) {
+    const chatInput = $('dd-chat-input');
+    const chatSend  = $('dd-chat-send');
+    if (chatInput) { chatInput.disabled = true; chatInput.placeholder = `You guessed it! (+${score} pts)`; }
+    if (chatSend)  chatSend.disabled = true;
+    showToast(`🎉 Correct! +${score} points`, 2500);
+  }
 });
 
 // ─────────────────────────────────────────────────────────
@@ -921,4 +1491,37 @@ $('btn-back-hub').addEventListener('click', () => showScreen('hub'));
 $('btn-play-again').addEventListener('click', () => {
   socket.emit('restart_game', {});
 });
+// ─────────────────────────────────────────────────────────
+//  DRAWING DASH – UI EVENT LISTENERS
+// ─────────────────────────────────────────────────────────
 
+// Chat send
+function ddSendChat() {
+  const input = $('dd-chat-input');
+  if (!input || input.disabled) return;
+  const text = input.value.trim();
+  if (!text) return;
+  socket.emit('dd_chat', { text });
+  input.value = '';
+}
+$('dd-chat-send').addEventListener('click', ddSendChat);
+$('dd-chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') ddSendChat();
+});
+
+// Custom word submit
+$('dd-custom-submit').addEventListener('click', () => {
+  const input = $('dd-custom-word');
+  const word  = (input ? input.value : '').trim();
+  if (!word) return;
+  socket.emit('dd_choose_word', { custom: word });
+  $('dd-overlay-picking').classList.add('hidden');
+  if (input) input.value = '';
+});
+$('dd-custom-word').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('dd-custom-submit').click();
+});
+
+// Play Again / Back to Games
+$('dd-play-again').addEventListener('click', () => { socket.emit('restart_game', {}); });
+$('dd-back-hub').addEventListener('click', () => showScreen('hub'));

@@ -6,7 +6,14 @@
 const roomManager  = require('./roomManager');
 const gameManager  = require('./gameManager');
 
-const GAME_EVENTS = ['submit_fact', 'submit_vote', 'restart_game'];
+const GAME_EVENTS = [
+  // Who Is It?
+  'submit_fact', 'submit_vote',
+  // Drawing Dash
+  'dd_choose_word', 'dd_draw', 'dd_chat',
+  // Shared
+  'restart_game',
+];
 
 module.exports = function registerSocketHandlers(io) {
   io.on('connection', (socket) => {

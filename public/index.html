@@ -36,7 +36,7 @@
       </div>
 
       <h1 class="hero-title">
-        Party games<br/><span class="gradient-text">for real friends</span>
+        Party games<br/><span class="gradient-text">for real gooners</span>
       </h1>
       <p class="hero-sub">Real-time multiplayer. No account needed.</p>
 
@@ -50,7 +50,7 @@
       <div class="hero-divider"></div>
 
       <div class="landing-form">
-        <label class="landing-label" for="input-nickname">What's your name?</label>
+        <label class="landing-label" for="input-nickname">What's your nickname?</label>
         <input
           type="text"
           id="input-nickname"
@@ -339,6 +339,173 @@
 
     </div><!-- /game-overlay -->
   </div><!-- /screen-game -->
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 6 – DRAWING DASH
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-drawing-dash" class="screen">
+
+    <!-- ── Top bar ─────────────────────────────────────────── -->
+    <header class="dd-header">
+      <div class="dd-header-left">
+        <div class="logo small">
+          <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
+          <span class="logo-text">GamesHub</span>
+        </div>
+        <div class="room-badge">
+          <i class="fi fi-rr-key" aria-hidden="true"></i>
+          <span id="dd-room-code" class="room-code">––––</span>
+        </div>
+      </div>
+
+      <div class="dd-header-center">
+        <div class="dd-word-hint" id="dd-word-hint" aria-label="Word hint"></div>
+        <div class="dd-round-label" id="dd-round-label">Round 1 / 3</div>
+      </div>
+
+      <div class="dd-header-right">
+        <div class="dd-timer" id="dd-timer">
+          <svg class="dd-timer-ring" viewBox="0 0 44 44" aria-hidden="true">
+            <circle class="dd-timer-track" cx="22" cy="22" r="18"/>
+            <circle class="dd-timer-arc"   cx="22" cy="22" r="18" id="dd-timer-arc"/>
+          </svg>
+          <span class="dd-timer-num" id="dd-timer-num">80</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── Main body: canvas + sidebar ────────────────────── -->
+    <div class="dd-body">
+
+      <!-- Canvas + tools -->
+      <div class="dd-canvas-area">
+        <div class="dd-canvas-wrap" id="dd-canvas-wrap">
+          <canvas id="dd-canvas" width="800" height="600"></canvas>
+          <!-- "Waiting for word" banner, shown during DD_PICKING_WORD -->
+          <div class="dd-canvas-waiting hidden" id="dd-canvas-waiting">
+            <i class="fi fi-rr-pencil" aria-hidden="true"></i>
+            <span id="dd-canvas-waiting-text">Waiting for drawer to pick a word…</span>
+          </div>
+        </div>
+
+        <!-- Drawing toolbar (only visible when you are the drawer) -->
+        <div class="dd-tools hidden" id="dd-tools">
+          <!-- Colors -->
+          <div class="dd-tool-group">
+            <div class="dd-palette" id="dd-palette">
+              <!-- injected by JS -->
+            </div>
+          </div>
+          <!-- Brush / Eraser / Fill -->
+          <div class="dd-tool-group">
+            <button class="dd-tool-btn active" id="dd-tool-brush" data-tool="brush" title="Brush">
+              <i class="fi fi-rr-pencil" aria-hidden="true"></i>
+            </button>
+            <button class="dd-tool-btn" id="dd-tool-eraser" data-tool="eraser" title="Eraser">
+              <i class="fi fi-rr-eraser" aria-hidden="true"></i>
+            </button>
+            <button class="dd-tool-btn" id="dd-tool-fill" data-tool="fill" title="Fill">
+              <i class="fi fi-rr-fill" aria-hidden="true"></i>
+            </button>
+          </div>
+          <!-- Brush size -->
+          <div class="dd-tool-group">
+            <button class="dd-size-btn" data-size="4"  title="Small">S</button>
+            <button class="dd-size-btn active" data-size="10" title="Medium">M</button>
+            <button class="dd-size-btn" data-size="22" title="Large">L</button>
+            <button class="dd-size-btn" data-size="40" title="XL">XL</button>
+          </div>
+          <!-- Clear -->
+          <div class="dd-tool-group">
+            <button class="dd-tool-btn dd-tool-clear" id="dd-tool-clear" title="Clear canvas">
+              <i class="fi fi-rr-trash" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sidebar: players + chat -->
+      <div class="dd-sidebar">
+        <div class="dd-players-list" id="dd-players-list">
+          <!-- injected by JS -->
+        </div>
+        <div class="dd-chat">
+          <div class="dd-chat-log" id="dd-chat-log" aria-live="polite"></div>
+          <div class="dd-chat-input-row" id="dd-chat-input-row">
+            <input
+              type="text"
+              id="dd-chat-input"
+              class="input-field"
+              placeholder="Guess the word…"
+              maxlength="100"
+              autocomplete="off"
+            />
+            <button class="btn btn-primary btn-sm" id="dd-chat-send" aria-label="Send">
+              <i class="fi fi-rr-paper-plane" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- .dd-body -->
+
+    <!-- ── Word-picking overlay (drawer only) ─────────────── -->
+    <div class="dd-overlay hidden" id="dd-overlay-picking">
+      <div class="dd-modal">
+        <h2 class="dd-modal-title">
+          <i class="fi fi-rr-thought-bubble" aria-hidden="true"></i> Choose a word to draw
+        </h2>
+        <p class="dd-modal-sub" id="dd-pick-timer-text">You have <strong id="dd-pick-seconds">15</strong>s to choose</p>
+        <div class="dd-word-choices" id="dd-word-choices">
+          <!-- 3 word buttons injected by JS -->
+        </div>
+        <div class="dd-custom-row">
+          <input
+            type="text"
+            id="dd-custom-word"
+            class="input-field"
+            placeholder="Or type your own word…"
+            maxlength="30"
+            autocomplete="off"
+          />
+          <button class="btn btn-ghost btn-sm" id="dd-custom-submit">
+            <i class="fi fi-rr-check" aria-hidden="true"></i> Use
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Round-end overlay ────────────────────────────────── -->
+    <div class="dd-overlay hidden" id="dd-overlay-round-end">
+      <div class="dd-modal dd-modal-round-end">
+        <div class="dd-reveal-word" id="dd-reveal-word"></div>
+        <div class="dd-round-drawer-row" id="dd-round-drawer-row"></div>
+        <div class="dd-round-guessed" id="dd-round-guessed"></div>
+        <div class="dd-round-scores" id="dd-round-scores"></div>
+        <p class="auto-advance-notice">
+          Next in <span id="dd-advance-cd">7</span>s…
+        </p>
+      </div>
+    </div>
+
+    <!-- ── Game-over overlay ─────────────────────────────────── -->
+    <div class="dd-overlay hidden" id="dd-overlay-game-over">
+      <div class="dd-modal dd-modal-game-over">
+        <h2 class="panel-title"><i class="fi fi-sr-trophy" aria-hidden="true"></i> Final Scores</h2>
+        <div class="leaderboard" id="dd-leaderboard"></div>
+        <div class="round-history" id="dd-round-history"></div>
+        <div id="dd-game-over-host" class="host-controls hidden" style="margin-top:1rem;">
+          <button class="btn btn-primary" id="dd-play-again">
+            <i class="fi fi-rr-rotate-right" aria-hidden="true"></i> Play Again
+          </button>
+        </div>
+        <button class="btn btn-ghost" id="dd-back-hub" style="margin-top:0.5rem;">
+          <i class="fi fi-rr-apps" aria-hidden="true"></i> Back to Games
+        </button>
+      </div>
+    </div>
+
+  </div><!-- #screen-drawing-dash -->
 
   <!-- Toast notification -->
   <div id="toast" class="toast hidden"></div>

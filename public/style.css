@@ -1465,3 +1465,463 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   .vote-grid { grid-template-columns: repeat(2, 1fr); }
   .panel-title { font-size: 1.2rem; }
 }
+
+/* ════════════════════════════════════════════════════════════
+   DRAWING DASH
+════════════════════════════════════════════════════════════ */
+
+/* ── Screen layout ──────────────────────────────────────────── */
+#screen-drawing-dash {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.dd-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 56px;
+}
+.dd-header-left  { display: flex; align-items: center; gap: 0.75rem; flex: 1; }
+.dd-header-right { display: flex; align-items: center; gap: 0.5rem; flex: 0; }
+.dd-header-center {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+.dd-word-hint {
+  font-size: clamp(1.1rem, 3vw, 1.7rem);
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  color: var(--text-primary);
+  font-family: 'Orbitron', monospace;
+  text-transform: uppercase;
+  min-height: 1.6em;
+  text-align: center;
+}
+.dd-round-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ── Circular timer ─────────────────────────────────────────── */
+.dd-timer {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.dd-timer-ring {
+  width: 44px;
+  height: 44px;
+  transform: rotate(-90deg);
+}
+.dd-timer-track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 3;
+}
+.dd-timer-arc {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 113.1;    /* 2π × 18 */
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.9s linear, stroke 0.3s;
+}
+.dd-timer-arc.danger { stroke: var(--danger); }
+.dd-timer-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* ── Body ────────────────────────────────────────────────────── */
+.dd-body {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Canvas area ─────────────────────────────────────────────── */
+.dd-canvas-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.5rem;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+.dd-canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.35);
+}
+#dd-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #ffffff;
+  cursor: crosshair;
+  touch-action: none;
+  border-radius: 10px;
+}
+.dd-canvas-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: rgba(255,255,255,0.92);
+  border-radius: 10px;
+  font-size: 1rem;
+  color: #555;
+  pointer-events: none;
+  z-index: 2;
+}
+.dd-canvas-waiting i.fi { font-size: 2.5rem; color: var(--primary); }
+
+/* ── Drawing toolbar ────────────────────────────────────────── */
+.dd-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.3rem 0.1rem;
+  flex-shrink: 0;
+}
+.dd-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.4rem;
+  border-right: 1px solid var(--border);
+}
+.dd-tool-group:last-child { border-right: none; }
+
+.dd-tool-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  flex-shrink: 0;
+}
+.dd-tool-btn:hover  { background: var(--surface-raised); color: var(--text-primary); }
+.dd-tool-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.dd-tool-clear:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+.dd-size-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.dd-size-btn.active { border-color: var(--primary); color: var(--primary); }
+.dd-size-btn:hover  { background: var(--surface-raised); }
+
+/* Colour palette */
+.dd-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 148px;
+}
+.dd-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.12s;
+  flex-shrink: 0;
+}
+.dd-color-swatch:hover  { transform: scale(1.18); }
+.dd-color-swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--primary); }
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+.dd-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Players list */
+.dd-players-list {
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border-bottom: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: 35%;
+  flex-shrink: 0;
+}
+.dd-player-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.35rem;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  transition: background 0.15s;
+}
+.dd-player-row.is-drawer  { background: rgba(139,92,246,0.12); color: var(--text-primary); }
+.dd-player-row.has-guessed { opacity: 0.65; }
+.dd-player-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dd-player-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-player-score { font-size: 0.72rem; font-weight: 600; color: var(--text-dim); }
+.dd-player-tag {
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.dd-player-tag.drawing { background: var(--primary); color: #fff; }
+.dd-player-tag.guessed { background: var(--emerald); color: #fff; }
+
+/* Chat */
+.dd-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.dd-chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  scroll-behavior: smooth;
+}
+.dd-chat-msg {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 5px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.dd-chat-msg .msg-name { font-weight: 600; margin-right: 0.3em; }
+.dd-chat-msg.system  {
+  background: rgba(139,92,246,0.12);
+  color: var(--text-primary);
+  text-align: center;
+  font-style: italic;
+}
+.dd-chat-msg.correct { background: rgba(16,185,129,0.15); color: #10b981; font-weight: 600; }
+.dd-chat-msg.close   { background: rgba(245,158,11,0.12); color: #f59e0b; }
+.dd-chat-msg.guessed-already { opacity: 0.55; }
+
+.dd-chat-input-row {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dd-chat-input-row .input-field { flex: 1; min-width: 0; padding: 0.45rem 0.7rem; font-size: 0.82rem; }
+
+/* ── Overlays ────────────────────────────────────────────────── */
+.dd-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 18, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  backdrop-filter: blur(4px);
+  padding: 1rem;
+}
+#screen-drawing-dash { position: relative; }
+
+.dd-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem 2.5rem;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.5);
+  animation: panelIn 0.25s ease;
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+.dd-modal-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+  color: var(--text-primary);
+}
+.dd-modal-sub { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; }
+
+/* Word choice buttons */
+.dd-word-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+.dd-word-btn {
+  width: 100%;
+  padding: 0.85rem 1.2rem;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: background var(--transition), border-color var(--transition), transform 0.1s;
+}
+.dd-word-btn:hover { background: var(--primary); border-color: var(--primary); color: #fff; transform: scale(1.02); }
+
+.dd-custom-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.dd-custom-row .input-field { flex: 1; min-width: 0; }
+
+/* Round end */
+.dd-modal-round-end { text-align: center; }
+.dd-reveal-word {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  font-family: 'Orbitron', monospace;
+}
+.dd-round-drawer-row {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.dd-round-guessed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+.dd-guessed-chip {
+  padding: 0.25rem 0.7rem;
+  border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.dd-round-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+.dd-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: var(--surface-raised);
+}
+.dd-score-row .score-pts { font-weight: 700; color: var(--primary); }
+
+/* Game over */
+.dd-modal-game-over { max-width: 560px; }
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .dd-body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .dd-sidebar {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 200px;
+    flex-direction: row;
+  }
+  .dd-players-list { max-height: none; border-bottom: none; border-right: 1px solid var(--border); max-width: 90px; flex-shrink: 0; }
+  .dd-header-left .logo { display: none; }
+  .dd-word-hint { font-size: 0.95rem; letter-spacing: 0.2em; }
+  .dd-tools { gap: 0.35rem; }
+  .dd-tool-btn { width: 30px; height: 30px; font-size: 0.85rem; }
+  .dd-modal { padding: 1.5rem 1.25rem; }
+}

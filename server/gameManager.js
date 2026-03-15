@@ -11,7 +11,8 @@ const roomManager = require('./roomManager');
 //  Add new games here by adding a key and handler module.
 // ─────────────────────────────────────────────
 const GAMES = {
-  'who-is-it': require('./games/whoIsIt'),
+  'who-is-it':    require('./games/whoIsIt'),
+  'drawing-dash': require('./games/drawingDash'),
 };
 
 /**
@@ -42,15 +43,24 @@ function getAvailableGames() {
     {
       id: 'drawing-dash',
       title: 'Drawing Dash',
-      description: 'Draw a word in 60 seconds and race to guess what others are drawing.',
-      longDescription: 'A fast-paced drawing and guessing game. One player draws a secret word while everyone else frantically types guesses. The faster you guess, the more points you earn!',
-      rules: [],
-      minPlayers: 3,
+      description: 'Draw a word in 80 seconds and race to guess what others are drawing.',
+      longDescription: 'A fast-paced drawing and guessing game. One player draws a secret word while everyone else frantically types guesses. Hints are gradually revealed and the faster you guess, the more points you earn!',
+      rules: [
+        'A random player becomes the drawer each turn.',
+        'The drawer picks one of 3 random words (or enters a custom one).',
+        'Other players type guesses in the chat to score points.',
+        'First to guess earns 300 pts — subsequent guessers earn less.',
+        'The drawer earns 50 pts for every player who guesses correctly.',
+        'If your guess is almost right, you\'ll get an "Almost!" warning.',
+        'Two hint letters are revealed as time runs out.',
+        'Everyone draws once per round. Most points wins!',
+      ],
+      minPlayers: 2,
       maxPlayers: 12,
       avgMinutes: 15,
       iconClass: 'fi-rr-pencil',
       bannerGradient: 'linear-gradient(135deg, #06b6d4 0%, #10b981 100%)',
-      comingSoon: true,
+      comingSoon: false,
     },
     {
       id: 'quiz-blitz',
