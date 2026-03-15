@@ -99,72 +99,93 @@ function rand(min, max) {
   return min + Math.random() * (max - min);
 }
 
+// ── JS-driven floater state ──────────────────────────────
+let _floaterItems = [];   // { el, x, y, vx, vy, size }
+let _floaterRaf   = null;
+let _floaterLastTs = 0;
+
 function spawnFloaters() {
   const container = $('landing-floaters');
-  if (!container || container.children.length > 0) return;
+  if (!container) return;
+  container.innerHTML = '';
+  _floaterItems = [];
 
-  const sizeScale = isFloaterMobile() ? 0.62 : 1;
+  const sizeScale  = isFloaterMobile() ? 0.62 : 1;
+  const baseSizes  = [130, 105, 155, 95, 120, 140, 88, 125, 100, 160];
+  const opacities  = [0.55, 0.50, 0.58, 0.45, 0.55, 0.50, 0.42, 0.55, 0.48, 0.40];
+  const W = window.innerWidth;
+  const H = window.innerHeight;
 
-  // Columns:  size  L%  T%   dx1      dy1      dx2       dy2      dx3      dy3      dur delay  op   z
-  // Paths are pure-translation. Each floater occupies its own screen region
-  // with movement that steers it away from neighbours' paths.
-  const configs = [
-    // top-left corner, drifts right + down
-    [130,  4,   8,  '160px',  '100px',  '220px',  '30px',  '160px',  '180px',  34, 0,  0.55, 2],
-    // top-right corner, drifts left + down
-    [105, 80,   8, '-130px',   '70px', '-200px',  '20px', '-130px',  '160px',  29, 3,  0.50, 4],
-    // mid-right, drifts left + up strongly
-    [155, 82,  44, '-180px', '-110px', '-240px', '-30px', '-180px', '-200px',  38, 7,  0.58, 1],
-    // bottom-left, drifts right + up
-    [ 95,  6,  74,  '150px', '-120px',  '210px', '-30px',  '150px', '-200px',  32, 12, 0.45, 3],
-    // top-center, drifts down + right
-    [120, 44,   3,   '80px',  '170px',  '120px', '260px',   '80px',  '350px',  42, 5,  0.55, 5],
-    // bottom-center, drifts up + left
-    [140, 38,  82,  '-80px', '-170px', '-120px', '-260px', '-80px', '-350px',  36, 9,  0.50, 2],
-    // mid-left, drifts right + up
-    [ 88, 10,  50,  '180px', '-100px',  '270px', '-10px',  '180px', '-170px',  30, 16, 0.42, 4],
-    // bottom-right, drifts left + up
-    [125, 76,  78, '-160px', '-100px', '-240px', '-30px', '-160px', '-180px',  44, 2,  0.55, 1],
-    // far-right mid-low, drifts left heavily
-    [100, 88,  60, '-200px',  '-60px', '-300px',  '50px', '-200px',  '130px',  33, 18, 0.48, 3],
-    // center, drifts out and back in opposite arc
-    [160, 42,  38,   '60px', '-160px',  '-80px', '-220px',  '60px', '-300px',  50, 8,  0.40, 5],
-  ];
+  baseSizes.forEach((baseSize, i) => {
+    const size = Math.round(baseSize * sizeScale);
 
-  configs.forEach(([size, left, top, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, op, zLayer]) => {
-    const scaledSize = Math.round(size * sizeScale);
+    // Start anywhere on screen
+    const x = rand(0, Math.max(0, W - size));
+    const y = rand(0, Math.max(0, H - size));
+
+    // Consistent direction throughout – no reversals
+    const speed = rand(28, 55);
+    const angle = rand(0, Math.PI * 2);
+    const vx    = Math.cos(angle) * speed;
+    const vy    = Math.sin(angle) * speed;
 
     const wrap = document.createElement('div');
     wrap.className = 'floater';
-    wrap.style.cssText = `
-      width: ${scaledSize}px;
-      left: ${left}%;
-      top: ${top}%;
-      z-index: ${zLayer};
-      --dur: ${dur}s;
-      --delay: -${delay}s;
-      --op: ${op};
-      --dx1: ${dx1}; --dy1: ${dy1};
-      --dx2: ${dx2}; --dy2: ${dy2};
-      --dx3: ${dx3}; --dy3: ${dy3};
-    `;
+    wrap.style.cssText = `width:${size}px;opacity:${opacities[i]};`;
+    wrap.style.transform = `translate(${x}px,${y}px)`;
 
     const img = document.createElement('img');
-    img.src = FLOATER_SRCS[Math.floor(Math.random() * FLOATER_SRCS.length)];
-    img.alt = '';
+    img.src       = FLOATER_SRCS[Math.floor(Math.random() * FLOATER_SRCS.length)];
+    img.alt       = '';
     img.className = 'floater-img';
     img.draggable = false;
 
-    // Some floaters spin slowly (smooth, continuous)
+    // ~half of floaters spin slowly (CSS handles this smoothly)
     if (Math.random() < 0.5) {
       img.classList.add('spin');
-      img.style.setProperty('--spinDur', `${rand(42, 92).toFixed(1)}s`);
+      img.style.setProperty('--spinDur',   `${rand(42, 92).toFixed(1)}s`);
       img.style.setProperty('--spinStart', `${rand(0, 360).toFixed(1)}deg`);
     }
 
     wrap.appendChild(img);
     container.appendChild(wrap);
+    _floaterItems.push({ el: wrap, x, y, vx, vy, size });
   });
+}
+
+function _floaterTick(ts) {
+  if (!_floaterRaf) return;
+  const dt = Math.min((ts - _floaterLastTs) / 1000, 0.05);
+  _floaterLastTs = ts;
+
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+
+  for (const f of _floaterItems) {
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+
+    // Wrap-around: exit one side → enter opposite
+    const m = f.size;
+    if      (f.x >  W + m) f.x = -m;
+    else if (f.x < -m)     f.x =  W + m;
+    if      (f.y >  H + m) f.y = -m;
+    else if (f.y < -m)     f.y =  H + m;
+
+    f.el.style.transform = `translate(${f.x}px,${f.y}px)`;
+  }
+
+  _floaterRaf = requestAnimationFrame(_floaterTick);
+}
+
+function startFloaterLoop() {
+  if (_floaterRaf) return;
+  _floaterLastTs = performance.now();
+  _floaterRaf    = requestAnimationFrame(_floaterTick);
+}
+
+function stopFloaterLoop() {
+  if (_floaterRaf) { cancelAnimationFrame(_floaterRaf); _floaterRaf = null; }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -179,16 +200,19 @@ function showScreen(name) {
     btnMusicToggle?.classList.remove('hidden');
     startLandingMusic();
     spawnFloaters();
+    startFloaterLoop();
   } else {
     // Hide music toggle + pause music when leaving landing
     btnMusicToggle?.classList.add('hidden');
     stopLandingMusic();
+    stopFloaterLoop();
   }
 }
 
 // Attempt autoplay on page load.
 // ES modules are deferred — DOM is already ready when this runs, so we call directly.
 spawnFloaters();
+startFloaterLoop();
 startLandingMusic();
 // If autoplay was blocked by the browser, start on first interaction
 const _startOnInteract = () => {

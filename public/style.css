@@ -100,12 +100,13 @@ h1, h2, h3, h4 {
   overflow: hidden;
 }
 .floater {
+  /* Position is driven by JS – no CSS animation on this element */
   position: absolute;
-  will-change: transform, opacity;
+  left: 0;
+  top: 0;
   image-rendering: auto;
   user-select: none;
-  animation: floatDrift var(--dur, 28s) linear var(--delay, 0s) infinite;
-  opacity: var(--op, 0.55);
+  will-change: transform;
 }
 
 .floater-img {
@@ -116,14 +117,6 @@ h1, h2, h3, h4 {
   transform-origin: 50% 50%;
   backface-visibility: hidden;
   will-change: transform;
-}
-/* Pure-translation drift – no rotation so paths remain geometrically predictable */
-@keyframes floatDrift {
-  0%   { transform: translate(0,                           0);                            }
-  25%  { transform: translate(var(--dx1, 60px),  var(--dy1,-80px));  }
-  50%  { transform: translate(var(--dx2,120px),  var(--dy2, 20px));  }
-  75%  { transform: translate(var(--dx3, 60px),  var(--dy3,100px));  }
-  100% { transform: translate(0,                           0);                            }
 }
 
 @keyframes floaterSpin {
