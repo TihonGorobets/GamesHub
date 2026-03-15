@@ -92,47 +92,192 @@ const FLOATER_SRCS = [
   '/memes/igor_meme/igor3.png',
 ];
 
-function spawnFloaters() {
+const FLOATERS_COUNT_DESKTOP = 10;
+const FLOATERS_COUNT_MOBILE  = 10;
+const FLOATERS_MOBILE_BREAKPOINT_PX = 520;
+
+let floatersInitialized = false;
+let floaterAnimId = null;
+let floaterLastTs = 0;
+let floaterItems = []; // { el, baseSize, size, radius, x, y, vx, vy, angle, rotSpeed, opacity }
+
+function isMobileForFloaters() {
+  return window.innerWidth <= FLOATERS_MOBILE_BREAKPOINT_PX;
+}
+function getFloaterScale() {
+  return isMobileForFloaters() ? 0.62 : 1;
+}
+function getFloaterCount() {
+  return isMobileForFloaters() ? FLOATERS_COUNT_MOBILE : FLOATERS_COUNT_DESKTOP;
+}
+function rand(min, max) {
+  return min + Math.random() * (max - min);
+}
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function initFloaters() {
   const container = $('landing-floaters');
-  if (!container || container.children.length > 0) return;
+  if (!container || floatersInitialized) return;
 
-  const configs = [
-    // [size, startLeft%, startTop%, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, opacity, rotBase]
-    [130,  8,  15, '70px',  '-90px', '130px', '30px',  '70px',  '120px', 34, 0,    0.55, '-6deg'],
-    [105, 78,  10, '-80px', '-60px', '-140px','40px',  '-80px', '110px', 29, 3,    0.50, '5deg'],
-    [155, 85,  55, '-90px', '-80px', '-160px','-20px', '-90px', '60px',  38, 7,    0.58, '0deg'],
-    [95,  12,  70, '80px',  '-70px', '130px', '-10px', '80px',  '80px',  32, 12,   0.45, '8deg'],
-    [120, 50,   5, '60px',  '80px',  '110px', '160px', '60px',  '220px', 42, 5,    0.55, '-4deg'],
-    [140, 30,  80, '-70px', '-100px','-100px','-180px','-70px', '-260px',36, 9,    0.50, '7deg'],
-    [88,  65,  88, '50px',  '-80px', '-20px', '-150px','50px',  '-230px',30, 16,   0.42, '-8deg'],
-    [125, 20,  40, '-60px', '70px',  '-110px','140px', '-60px', '220px', 44, 2,    0.55, '4deg'],
-    [100, 90,  75, '-80px', '-50px', '-150px','20px',  '-80px', '90px',  33, 18,   0.48, '-5deg'],
-    [160, 45,  45, '50px',  '-70px', '30px',  '-130px','50px',  '-200px',50, 8,    0.40, '3deg'],
-  ];
+  container.innerHTML = '';
+  floaterItems = [];
+  floatersInitialized = true;
 
-  configs.forEach(([size, left, top, dx1, dy1, dx2, dy2, dx3, dy3, dur, delay, op, rot0]) => {
+  const baseSizes = [160, 150, 140, 130, 125, 120, 110, 105, 100, 95, 90, 88];
+  const scale = getFloaterScale();
+  const count = getFloaterCount();
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  for (let i = 0; i < count; i++) {
+    const baseSize = baseSizes[i % baseSizes.length];
+    const size = Math.round(baseSize * scale);
     const img = document.createElement('img');
-    img.src   = FLOATER_SRCS[Math.floor(Math.random() * FLOATER_SRCS.length)];
-    img.alt   = '';
+    img.src = pick(FLOATER_SRCS);
+    img.alt = '';
     img.className = 'floater';
     img.draggable = false;
-    img.style.cssText = `
-      width: ${size}px;
-      left: ${left}%;
-      top: ${top}%;
-      --dur: ${dur}s;
-      --delay: -${delay}s;
-      --op: ${op};
-      --rot0: ${rot0};
-      --dx1: ${dx1}; --dy1: ${dy1};
-      --dx2: ${dx2}; --dy2: ${dy2};
-      --dx3: ${dx3}; --dy3: ${dy3};
-      --rot1: ${Math.random() > 0.5 ? '10deg' : '-10deg'};
-      --rot2: ${rot0};
-      --rot3: ${Math.random() > 0.5 ? '-12deg' : '12deg'};
-    `;
+
+    const opacity = rand(0.38, 0.58);
+    img.style.width = `${size}px`;
+    img.style.opacity = opacity;
+
+    // Slow drift (px/s)
+    const speed = rand(10, 24);
+    const dir = rand(0, Math.PI * 2);
+    const vx = Math.cos(dir) * speed;
+    const vy = Math.sin(dir) * speed;
+
+    // Some floaters spin slowly (deg/s)
+    const spins = Math.random() < 0.45;
+    const rotSpeed = spins ? rand(1.2, 4.0) * (Math.random() < 0.5 ? -1 : 1) : 0;
+
+    // Start inside the viewport
+    const x = rand(0, Math.max(0, w - size));
+    const y = rand(0, Math.max(0, h - size));
+    const angle = rand(0, 360);
+
     container.appendChild(img);
+    floaterItems.push({
+      el: img,
+      baseSize,
+      size,
+      radius: size * 0.5,
+      x,
+      y,
+      vx,
+      vy,
+      angle,
+      rotSpeed,
+      opacity,
+    });
+  }
+}
+
+function applyFloaterResponsiveSizing() {
+  if (!floatersInitialized) return;
+  const scale = getFloaterScale();
+  floaterItems.forEach((f) => {
+    f.size = Math.round(f.baseSize * scale);
+    f.radius = f.size * 0.5;
+    f.el.style.width = `${f.size}px`;
   });
+}
+
+function separateFloaters() {
+  // Gentle repulsion to avoid visual "collisions" / overlaps.
+  for (let i = 0; i < floaterItems.length; i++) {
+    for (let j = i + 1; j < floaterItems.length; j++) {
+      const a = floaterItems[i];
+      const b = floaterItems[j];
+      const dx = (b.x + b.radius) - (a.x + a.radius);
+      const dy = (b.y + b.radius) - (a.y + a.radius);
+      const dist = Math.hypot(dx, dy);
+      const minDist = (a.radius + b.radius) * 0.86;
+      if (!dist || dist >= minDist) continue;
+      const overlap = minDist - dist;
+      const nx = dx / dist;
+      const ny = dy / dist;
+
+      // Push apart
+      a.x -= nx * (overlap * 0.5);
+      a.y -= ny * (overlap * 0.5);
+      b.x += nx * (overlap * 0.5);
+      b.y += ny * (overlap * 0.5);
+
+      // Nudge velocities slightly so they don't re-collide immediately
+      const nudge = overlap * 0.06;
+      a.vx -= nx * nudge;
+      a.vy -= ny * nudge;
+      b.vx += nx * nudge;
+      b.vy += ny * nudge;
+    }
+  }
+}
+
+function updateFloaters(dt) {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  floaterItems.forEach((f) => {
+    // Light damping keeps motion stable even after separation nudges
+    f.vx *= 0.999;
+    f.vy *= 0.999;
+
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+    f.angle += f.rotSpeed * dt;
+
+    // Wrap-around bounds (no "bouncing" so motion stays smooth & predictable)
+    const margin = f.size * 1.25;
+    if (f.x > w + margin) f.x = -margin;
+    if (f.x < -margin)    f.x = w + margin;
+    if (f.y > h + margin) f.y = -margin;
+    if (f.y < -margin)    f.y = h + margin;
+
+    // Cap speed to prevent runaway acceleration
+    const sp = Math.hypot(f.vx, f.vy);
+    const maxSp = 34;
+    if (sp > maxSp) {
+      f.vx = (f.vx / sp) * maxSp;
+      f.vy = (f.vy / sp) * maxSp;
+    }
+  });
+
+  separateFloaters();
+
+  floaterItems.forEach((f) => {
+    f.el.style.transform = `translate3d(${Math.round(f.x)}px, ${Math.round(f.y)}px, 0) rotate(${f.angle.toFixed(2)}deg)`;
+  });
+}
+
+function floaterLoop(ts) {
+  if (!floaterAnimId) return;
+  const dt = Math.min(0.05, (ts - floaterLastTs) / 1000);
+  floaterLastTs = ts;
+  updateFloaters(dt);
+  floaterAnimId = requestAnimationFrame(floaterLoop);
+}
+
+function startFloaters() {
+  const container = $('landing-floaters');
+  if (!container) return;
+  container.style.display = 'block';
+  initFloaters();
+  applyFloaterResponsiveSizing();
+  if (floaterAnimId) return;
+  floaterLastTs = performance.now();
+  floaterAnimId = requestAnimationFrame(floaterLoop);
+}
+
+function stopFloaters() {
+  const container = $('landing-floaters');
+  if (container) container.style.display = 'none';
+  if (!floaterAnimId) return;
+  cancelAnimationFrame(floaterAnimId);
+  floaterAnimId = null;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -146,17 +291,18 @@ function showScreen(name) {
     // Show music toggle + try autoplay
     btnMusicToggle?.classList.remove('hidden');
     startLandingMusic();
-    spawnFloaters();
+    startFloaters();
   } else {
     // Hide music toggle + pause music when leaving landing
     btnMusicToggle?.classList.add('hidden');
     stopLandingMusic();
+    stopFloaters();
   }
 }
 
 // Attempt autoplay on page load.
 // ES modules are deferred — DOM is already ready when this runs, so we call directly.
-spawnFloaters();
+startFloaters();
 startLandingMusic();
 // If autoplay was blocked by the browser, start on first interaction
 const _startOnInteract = () => {
@@ -166,6 +312,10 @@ const _startOnInteract = () => {
 };
 window.addEventListener('pointerdown', _startOnInteract);
 window.addEventListener('keydown',     _startOnInteract);
+
+window.addEventListener('resize', () => {
+  applyFloaterResponsiveSizing();
+});
 
 function showToast(msg, duration = 2800) {
   const t = $('toast');
