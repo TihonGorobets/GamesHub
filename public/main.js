@@ -78,14 +78,14 @@ function renderPlayerList(players) {
 function renderScoreboard(players) {
   const sb = $('game-scoreboard');
   if (!sb) return;
+  // Scores are hidden during gameplay — revealed only at game over
   sb.innerHTML = players
     .slice()
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => `
       <div class="score-chip-header">
         <div style="width:10px;height:10px;border-radius:50%;background:${p.color}"></div>
         <span>${escHtml(p.name)}</span>
-        <span style="color:var(--purple)">${p.score}</span>
       </div>
     `).join('');
 }
@@ -391,15 +391,8 @@ function showResultPhase(data) {
     <p class="result-hint"><i class="fi fi-rr-lock" aria-hidden="true"></i> Author &amp; votes revealed at end of game!</p>
   `;
 
-  $('result-scores').innerHTML = data.players
-    .slice()
-    .sort((a, b) => b.score - a.score)
-    .map((p) => `
-      <div class="score-chip">
-        <div class="score-dot" style="background:${p.color}"></div>
-        <span>${escHtml(p.name)}</span>
-        <span style="color:var(--purple)">${p.score}</span>
-      </div>`).join('');
+  // Scores hidden during gameplay — only shown at game over
+  $('result-scores').innerHTML = '';
 
   let cd = 6;
   $('auto-advance-countdown').textContent = cd;
