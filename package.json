@@ -1,0 +1,26 @@
+{
+  "name": "gameshub",
+  "version": "1.0.0",
+  "description": "Modern real-time multiplayer mini-game platform",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "nodemon server/server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["multiplayer", "games", "socket.io", "party-game"],
+  "author": "GamesHub",
+  "license": "MIT"
+}

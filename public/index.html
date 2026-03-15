@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GamesHub – Play with Friends</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/2.6.0/uicons-regular-rounded/css/uicons-regular-rounded.css" />
+  <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/2.6.0/uicons-solid-rounded/css/uicons-solid-rounded.css" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 1 – LANDING  (enter nickname)
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-landing" class="screen active">
+    <div class="landing-bg"></div>
+
+    <div class="landing-center">
+      <div class="logo landing-logo">
+        <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
+        <span class="logo-text">GamesHub</span>
+      </div>
+
+      <h1 class="hero-title">
+        Party games<br/><span class="gradient-text">for real friends</span>
+      </h1>
+      <p class="hero-sub">Real-time multiplayer. No account needed.</p>
+
+      <div class="landing-form">
+        <label class="landing-label" for="input-nickname">What's your name?</label>
+        <input
+          type="text"
+          id="input-nickname"
+          class="input-field input-lg"
+          placeholder="Enter your nickname…"
+          maxlength="20"
+          autocomplete="off"
+        />
+        <p class="error-text hidden" id="landing-error"></p>
+        <button class="btn btn-primary btn-full btn-lg" id="btn-landing-continue">
+          Continue &nbsp;<i class="fi fi-rr-arrow-right" aria-hidden="true"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 2 – GAME HUB  (choose a game)
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-hub" class="screen">
+    <header class="site-header">
+      <div class="logo small">
+        <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
+        <span class="logo-text">GamesHub</span>
+      </div>
+      <div class="header-player-badge" id="hub-player-badge">
+        <i class="fi fi-rr-user" aria-hidden="true"></i>
+        <span id="hub-player-name"></span>
+      </div>
+    </header>
+    <main class="hub-body">
+      <div class="hub-header">
+        <h1 class="hub-title">Choose a Game</h1>
+        <p class="hub-sub">Pick a game and invite your friends</p>
+      </div>
+      <div class="hub-grid" id="hub-grid">
+        <!-- game cards injected by JS -->
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 3 – GAME DETAIL  (description + create/join)
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-detail" class="screen">
+    <header class="site-header">
+      <button class="btn btn-ghost btn-sm" id="btn-detail-back">
+        <i class="fi fi-rr-arrow-left" aria-hidden="true"></i> Back
+      </button>
+      <div class="logo small">
+        <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
+        <span class="logo-text">GamesHub</span>
+      </div>
+      <div class="header-player-badge">
+        <i class="fi fi-rr-user" aria-hidden="true"></i>
+        <span id="detail-player-name"></span>
+      </div>
+    </header>
+
+    <div class="detail-body">
+      <div class="detail-artwork" id="detail-artwork">
+        <i class="detail-artwork-icon fi" id="detail-artwork-icon" aria-hidden="true"></i>
+      </div>
+
+      <div class="detail-content">
+        <div class="detail-meta" id="detail-meta"></div>
+        <h1 class="detail-title" id="detail-title">Game Title</h1>
+        <p class="detail-description" id="detail-description">Loading…</p>
+
+        <div class="detail-rules">
+          <h3 class="rules-title">
+            <i class="fi fi-rr-list" aria-hidden="true"></i> How to Play
+          </h3>
+          <ol class="rules-list" id="detail-rules-list"></ol>
+        </div>
+
+        <div class="detail-actions">
+          <button class="btn btn-primary btn-full" id="btn-create-party">
+            <i class="fi fi-rr-magic-wand" aria-hidden="true"></i> Create Party
+          </button>
+          <button class="btn btn-ghost btn-full" id="btn-show-join">
+            <i class="fi fi-rr-sign-in-alt" aria-hidden="true"></i> Join with Code
+          </button>
+          <div class="join-inline hidden" id="join-inline">
+            <div class="join-inline-row">
+              <input
+                type="text"
+                id="input-join-code"
+                class="input-field"
+                placeholder="Room code (e.g. XKCD)"
+                maxlength="4"
+                autocomplete="off"
+                style="text-transform:uppercase;letter-spacing:0.2em;"
+              />
+              <button class="btn btn-primary" id="btn-confirm-join">
+                <i class="fi fi-rr-arrow-right" aria-hidden="true"></i>
+              </button>
+            </div>
+            <p class="error-text hidden" id="join-error"></p>
+          </div>
+        </div>
+
+        <p class="error-text hidden" id="detail-error"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 4 – LOBBY
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-lobby" class="screen">
+    <header class="site-header">
+      <button class="btn btn-ghost btn-sm" id="btn-lobby-leave">
+        <i class="fi fi-rr-arrow-left" aria-hidden="true"></i> Leave
+      </button>
+      <div class="logo small">
+        <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
+        <span class="logo-text">GamesHub</span>
+      </div>
+      <div class="room-badge">
+        <i class="fi fi-rr-key" aria-hidden="true"></i>
+        <span id="lobby-room-code" class="room-code">––––</span>
+        <button class="btn-icon" id="btn-copy-code" title="Copy link">
+          <i class="fi fi-rr-copy" aria-hidden="true"></i>
+        </button>
+      </div>
+    </header>
+
+    <div class="lobby-body">
+      <div class="lobby-left">
+        <div class="lobby-game-tag" id="lobby-game-tag"></div>
+        <h2 class="section-title">
+          Players <span id="lobby-player-count" class="count-badge">0</span>
+        </h2>
+        <div class="player-list" id="lobby-player-list"></div>
+      </div>
+
+      <div class="lobby-right">
+        <div class="lobby-invite-block">
+          <h2 class="section-title">Invite Friends</h2>
+          <p class="lobby-invite-hint">Share this code with your friends:</p>
+          <div class="lobby-code-display">
+            <span id="lobby-code-big" class="lobby-code-big">––––</span>
+          </div>
+          <button class="btn btn-ghost btn-full" id="btn-copy-link">
+            <i class="fi fi-rr-copy" aria-hidden="true"></i> Copy Invite Link
+          </button>
+        </div>
+
+        <div id="lobby-host-controls" class="host-controls hidden">
+          <button class="btn btn-primary btn-full" id="btn-start-game">
+            <i class="fi fi-rr-rocket" aria-hidden="true"></i> Start Game
+          </button>
+          <p class="host-hint">You are the host — start whenever everyone is ready.</p>
+        </div>
+
+        <div id="lobby-waiting-block" class="hidden">
+          <div class="waiting-spinner"></div>
+          <p class="waiting-text">Waiting for the host to start the game…</p>
+        </div>
+
+        <p class="error-text hidden" id="lobby-error"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 5 – GAME  (Phaser + overlay panels)
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-game" class="screen">
+    <header class="game-header">
+      <div class="logo small">
+        <i class="fi fi-rr-gamepad logo-icon" aria-hidden="true"></i>
+        <span class="logo-text">GamesHub</span>
+      </div>
+      <div class="room-badge">
+        <i class="fi fi-rr-key" aria-hidden="true"></i>
+        <span id="game-room-code" class="room-code">––––</span>
+      </div>
+      <div class="player-scores" id="game-scoreboard"></div>
+    </header>
+
+    <div id="phaser-container"></div>
+
+    <div id="game-overlay" class="game-overlay hidden">
+
+      <!-- Phase: writing facts -->
+      <div id="panel-writing" class="game-panel hidden">
+        <div class="timer-bar-wrap">
+          <div class="timer-bar" id="timer-bar-writing"></div>
+        </div>
+        <h2 class="panel-title"><i class="fi fi-rr-pencil" aria-hidden="true"></i> Write a strange fact about yourself</h2>
+        <p class="panel-sub">Be creative! The weirder the better.</p>
+        <ul class="tip-list">
+          <li>Don't make it TOO obvious it's you.</li>
+          <li>But don't lie — it has to be true!</li>
+        </ul>
+        <textarea
+          id="fact-input"
+          class="textarea-field"
+          placeholder="e.g. I once got stuck inside a revolving door for 10 minutes."
+          maxlength="200"
+          rows="3"
+        ></textarea>
+        <div class="char-count"><span id="fact-char-count">0</span>/200</div>
+        <button class="btn btn-primary btn-full" id="btn-submit-fact">
+          <i class="fi fi-rr-check" aria-hidden="true"></i> Submit Fact
+        </button>
+        <p class="submitted-notice hidden" id="fact-submitted-notice">
+          <i class="fi fi-rr-check-circle" aria-hidden="true"></i> Fact submitted! Waiting for others…
+          <span id="facts-submitted-count"></span>
+        </p>
+      </div>
+
+      <!-- Phase: voting -->
+      <div id="panel-voting" class="game-panel hidden">
+        <div class="timer-bar-wrap">
+          <div class="timer-bar" id="timer-bar-voting"></div>
+        </div>
+        <div class="round-badge" id="voting-round-badge">Round 1 / 1</div>
+        <h2 class="panel-title"><i class="fi fi-rr-incognito" aria-hidden="true"></i> Who wrote this?</h2>
+        <div class="fact-card" id="fact-card">
+          <div class="fact-quotes">"</div>
+          <p id="fact-card-text">Loading…</p>
+          <div class="fact-quotes right">"</div>
+        </div>
+        <p class="panel-sub">Tap a player to vote</p>
+        <div class="vote-grid" id="vote-grid">
+          <!-- player buttons filled by JS -->
+        </div>
+        <p class="voted-notice hidden" id="voted-notice">
+          <i class="fi fi-rr-check-circle" aria-hidden="true"></i> Vote cast! Waiting for others…
+          <span id="votes-count"></span>
+        </p>
+      </div>
+
+      <!-- Phase: result reveal -->
+      <div id="panel-result" class="game-panel hidden">
+        <h2 class="panel-title"><i class="fi fi-rr-confetti" aria-hidden="true"></i> The author was…</h2>
+        <div class="author-reveal" id="author-reveal">
+          <div class="author-avatar" id="author-avatar">?</div>
+          <div class="author-name" id="author-name">Loading…</div>
+        </div>
+        <div class="fact-card small" id="result-fact-card">
+          <p id="result-fact-text"></p>
+        </div>
+        <div class="result-votes" id="result-vote-list">
+          <!-- vote breakdown filled by JS -->
+        </div>
+        <div class="scores-mini" id="result-scores">
+          <!-- score update filled by JS -->
+        </div>
+        <p class="auto-advance-notice" id="auto-advance-text">Next round in <span id="auto-advance-countdown">6</span>s…</p>
+      </div>
+
+      <!-- Phase: game over -->
+      <div id="panel-game-over" class="game-panel hidden">
+        <h2 class="panel-title"><i class="fi fi-sr-trophy" aria-hidden="true"></i> Final Scores</h2>
+        <div class="leaderboard" id="leaderboard">
+          <!-- filled by JS -->
+        </div>
+        <div id="game-over-host-controls" class="host-controls hidden">
+          <button class="btn btn-primary" id="btn-play-again">
+            <i class="fi fi-rr-rotate-right" aria-hidden="true"></i> Play Again
+          </button>
+        </div>
+        <button class="btn btn-ghost" id="btn-back-hub">
+          <i class="fi fi-rr-apps" aria-hidden="true"></i> Back to Games
+        </button>
+      </div>
+
+    </div><!-- /game-overlay -->
+  </div><!-- /screen-game -->
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ─── Scripts ─────────────────────────────────────────────── -->
+  <!-- Socket.IO client – loaded from server -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Phaser 3 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+  <!-- Our app -->
+  <script src="/main.js" type="module"></script>
+</body>
+</html>
