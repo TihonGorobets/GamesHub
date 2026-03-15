@@ -40,8 +40,9 @@ function $(id) { return document.getElementById(id); }
 //  LANDING MUSIC
 // ─────────────────────────────────────────────────────────
 const landingMusic = $('landing-music');
-let musicMuted     = false;
+let musicMuted     = true;   // muted by default on first visit
 let musicStarted   = false;
+if (landingMusic) landingMusic.muted = true;
 
 function startLandingMusic() {
   if (!landingMusic) return;
@@ -74,11 +75,13 @@ function updateMusicIcon() {
   btnMusicToggle?.classList.toggle('muted', musicMuted);
 }
 if (btnMusicToggle) {
+  // Reflect the default-muted state in the icon immediately
+  updateMusicIcon();
   btnMusicToggle.addEventListener('click', () => {
     musicMuted = !musicMuted;
     if (landingMusic) landingMusic.muted = musicMuted;
     updateMusicIcon();
-    // If we haven't started yet (autoplay blocked), start now on interaction
+    // Unmuting for first time – start playback now
     if (!musicMuted && landingMusic && landingMusic.paused) startLandingMusic();
   });
 }
