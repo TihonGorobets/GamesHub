@@ -103,7 +103,6 @@ const MEME_VIDEO_SRC = '/memes/video5312398194624209429.mp4';
 const MEME_SOUND_SRC = '/memes/the-rock-meme-sound-effect_INUb6uwK.mp3';
 
 let memeAudio = null;
-let memeSoundHasPlayed = false;
 
 function openMemeOverlay() {
   const overlay = $('meme-overlay');
@@ -142,14 +141,12 @@ function handleDoNotClick() {
   const ok = window.confirm('Are you sure that you want to click it?');
   if (!ok) return;
 
-  // Play sound only once per page load
-  if (!memeSoundHasPlayed) {
-    memeSoundHasPlayed = true;
-    if (!memeAudio) memeAudio = new Audio(MEME_SOUND_SRC);
-    memeAudio.loop = false;
-    memeAudio.currentTime = 0;
-    memeAudio.play().catch(() => {});
-  }
+  // Play sound every time on confirmation
+  if (!memeAudio) memeAudio = new Audio(MEME_SOUND_SRC);
+  try { memeAudio.pause(); } catch {}
+  memeAudio.loop = false;
+  memeAudio.currentTime = 0;
+  memeAudio.play().catch(() => {});
 
   openMemeOverlay();
 }
