@@ -13,6 +13,7 @@ const roomManager = require('./roomManager');
 const GAMES = {
   'who-is-it':    require('./games/whoIsIt'),
   'drawing-dash': require('./games/drawingDash'),
+  'pass-bomb':    require('./games/passBomb'),
 };
 
 /**
@@ -60,6 +61,26 @@ function getAvailableGames() {
       avgMinutes: 15,
       iconClass: 'fi-rr-pencil',
       bannerGradient: 'linear-gradient(135deg, #06b6d4 0%, #10b981 100%)',
+      comingSoon: false,
+    },
+    {
+      id: 'pass-bomb',
+      title: 'Pass the Bomb',
+      description: 'Run, dodge, and pass the bomb before it blows up in your hands!',
+      longDescription: 'A fast-paced arena elimination game. One player holds a ticking bomb and must run into others to pass it. When the timer hits zero — BOOM! The holder is eliminated. Last one standing wins.',
+      rules: [
+        'One random player starts with the bomb.',
+        'Run into another player to instantly pass the bomb.',
+        'The timer never resets — it keeps ticking after each transfer.',
+        'When the bomb explodes, the holder is eliminated.',
+        'Survive longer than everyone else to win.',
+        'Random modifiers shake things up mid-game!',
+      ],
+      minPlayers: 2,
+      maxPlayers: 10,
+      avgMinutes: 5,
+      iconClass: 'fi-rr-bomb',
+      bannerGradient: 'linear-gradient(135deg, #ef4444 0%, #f97316 100%)',
       comingSoon: false,
     },
     {

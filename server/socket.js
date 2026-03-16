@@ -11,6 +11,8 @@ const GAME_EVENTS = [
   'submit_fact', 'submit_vote',
   // Drawing Dash
   'dd_choose_word', 'dd_draw', 'dd_chat',
+  // Pass the Bomb
+  'ptb_input',
   // Shared
   'restart_game',
 ];

@@ -475,6 +475,11 @@ function enterGame(room) {
     return;
   }
 
+  if (state.selectedGameId === 'pass-bomb') {
+    enterPassBomb(room);
+    return;
+  }
+
   // Default: Who Is It?
   $('game-room-code').textContent = room.id;
   renderScoreboard(room.players);
@@ -1352,6 +1357,461 @@ function showDDGameOver(data) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  PASS THE BOMB  –  client-side logic
+// ─────────────────────────────────────────────────────────
+
+const PTB_ARENA_W = 800;
+const PTB_ARENA_H = 560;
+
+// Mirror of server obstacle list
+const PTB_OBSTACLES = [
+  [  40,  30, 80, 80 ],
+  [ 680,  30, 80, 80 ],
+  [  40, 450, 80, 80 ],
+  [ 680, 450, 80, 80 ],
+  [ 330, 100, 140, 34 ],
+  [ 330, 426, 140, 34 ],
+  [ 120, 260,  34, 80 ],
+  [ 646, 260,  34, 80 ],
+];
+
+const ptb = {
+  canvas:       null,
+  ctx:          null,
+  raf:          null,
+  fitBound:     false,
+  state:        null,   // latest server state snapshot
+  particles:    [],     // visual particles
+  exploFlash:   0,      // 0..1 explosion flash overlay
+  shakeTime:    0,      // seconds of remaining screen shake
+  lastTime:     0,
+  keys:         { up: false, down: false, left: false, right: false },
+  inputInterval: null,
+  modAnim:      0,
+};
+
+// ── Enter screen ───────────────────────────────────────────
+function enterPassBomb(room) {
+  state.room = room;
+  $('ptb-room-code').textContent = room.id;
+  showScreen('pass-bomb');
+
+  if (!ptb.canvas) {
+    ptb.canvas = $('ptb-canvas');
+    ptb.ctx    = ptb.canvas.getContext('2d', { alpha: false });
+    ptbInitInput();
+    if (!ptb.fitBound) {
+      ptb.fitBound = true;
+      window.addEventListener('resize', ptbFitCanvas);
+      window.addEventListener('orientationchange', () => setTimeout(ptbFitCanvas, 50));
+    }
+  }
+
+  // Reset overlays
+  $('ptb-overlay-countdown').classList.add('hidden');
+  $('ptb-overlay-gameover').classList.add('hidden');
+  $('ptb-modifier-banner').classList.add('hidden');
+
+  ptbFitCanvas();
+  ptbStartRenderLoop();
+}
+
+// ── Fit canvas to arena wrap ────────────────────────────────
+function ptbFitCanvas() {
+  if (!ptb.canvas) return;
+  const wrap = $('ptb-arena-wrap');
+  if (!wrap) return;
+  const maxW = wrap.clientWidth, maxH = wrap.clientHeight;
+  if (!maxW || !maxH) return;
+  const ratio = PTB_ARENA_W / PTB_ARENA_H;
+  let vW = maxW, vH = maxW / ratio;
+  if (vH > maxH) { vH = maxH; vW = maxH * ratio; }
+  ptb.canvas.style.width  = Math.floor(vW) + 'px';
+  ptb.canvas.style.height = Math.floor(vH) + 'px';
+}
+
+// ── Render loop ────────────────────────────────────────────
+function ptbStartRenderLoop() {
+  if (ptb.raf) return;
+  ptb.lastTime = performance.now();
+  const loop = (now) => {
+    ptb.raf = requestAnimationFrame(loop);
+    const dt = Math.min((now - ptb.lastTime) / 1000, 0.08);
+    ptb.lastTime = now;
+    ptbRender(dt);
+  };
+  ptb.raf = requestAnimationFrame(loop);
+}
+
+function ptbStopRenderLoop() {
+  if (ptb.raf) { cancelAnimationFrame(ptb.raf); ptb.raf = null; }
+}
+
+// ── Particles ──────────────────────────────────────────────
+function ptbSpawnExplosion(x, y, color) {
+  for (let i = 0; i < 42; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd   = 70 + Math.random() * 240;
+    const life  = 0.5 + Math.random() * 0.8;
+    const cols  = [color, '#f97316', '#fbbf24', '#ef4444', '#fff'];
+    ptb.particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life, maxLife: life,
+      color: cols[Math.floor(Math.random() * cols.length)],
+      size: 2.5 + Math.random() * 5,
+      drag: 0.92,
+    });
+  }
+  ptb.exploFlash = 0.7;
+  ptb.shakeTime  = 0.4;
+}
+
+function ptbSpawnTrail(p, prob) {
+  if (Math.random() > prob) return;
+  ptb.particles.push({
+    x: p.x + (Math.random() - 0.5) * 10,
+    y: p.y + (Math.random() - 0.5) * 10,
+    vx: (Math.random() - 0.5) * 25,
+    vy: (Math.random() - 0.5) * 25,
+    life: 0.22 + Math.random() * 0.18,
+    maxLife: 0.4,
+    color: p.hasBomb ? '#ef4444' : p.color,
+    size: 2 + Math.random() * 3,
+    drag: 0.86,
+  });
+}
+
+// Hex → rgba helper
+function ptbRgba(hex, a) {
+  const r = parseInt(hex.slice(1, 3), 16) || 0;
+  const g = parseInt(hex.slice(3, 5), 16) || 0;
+  const b = parseInt(hex.slice(5, 7), 16) || 0;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// ── Main renderer ──────────────────────────────────────────
+function ptbRender(dt) {
+  const ctx = ptb.ctx, canvas = ptb.canvas;
+  if (!ctx || !canvas) return;
+  const W = PTB_ARENA_W, H = PTB_ARENA_H;
+  const gs = ptb.state;
+  const t  = performance.now() / 1000;
+
+  ptb.modAnim += dt;
+
+  // Update particles
+  ptb.particles = ptb.particles.filter((p) => {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.life -= dt;
+    p.vx *= p.drag; p.vy *= p.drag;
+    return p.life > 0;
+  });
+  ptb.exploFlash = Math.max(0, ptb.exploFlash - dt * 2.4);
+
+  // Screen shake
+  let sx = 0, sy = 0;
+  if (ptb.shakeTime > 0) {
+    ptb.shakeTime -= dt;
+    sx = (Math.random() - 0.5) * 10 * Math.max(0, ptb.shakeTime);
+    sy = (Math.random() - 0.5) * 10 * Math.max(0, ptb.shakeTime);
+  }
+
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // Background
+  ctx.fillStyle = '#09090f';
+  ctx.fillRect(-6, -6, W + 12, H + 12);
+
+  // Animated neon grid
+  const gridSize = 40;
+  ctx.globalAlpha = 0.05 + 0.015 * Math.sin(t * 0.5);
+  ctx.strokeStyle = '#8b5cf6';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  for (let x = 0; x <= W; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = 0; y <= H; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Arena border
+  ctx.strokeStyle = 'rgba(99,102,241,0.4)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, W - 2, H - 2);
+  ctx.strokeStyle = 'rgba(239,68,68,0.1)';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(1, 1, W - 2, H - 2);
+
+  // Modifier tint
+  if (gs?.modifier) {
+    ctx.fillStyle = gs.modifier.color || '#8b5cf6';
+    ctx.globalAlpha = 0.025 + 0.018 * Math.sin(ptb.modAnim * 3);
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // Obstacles
+  for (const [bx, by, bw, bh] of PTB_OBSTACLES) {
+    ctx.fillStyle = '#0c0e1c';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = 'rgba(99,102,241,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(bx, by, bw, bh);
+    // Specular
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.fillRect(bx, by, bw, 3);
+    ctx.fillRect(bx, by, 3, bh);
+  }
+
+  // Particles
+  for (const p of ptb.particles) {
+    const a = p.life / p.maxLife;
+    ctx.globalAlpha = a * 0.9;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (0.5 + 0.5 * a), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Players
+  if (gs?.players) {
+    const R = 20;
+
+    // Dead ghosts (behind living)
+    for (const p of gs.players.filter((pp) => !pp.alive)) {
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Living players
+    for (const p of gs.players.filter((pp) => pp.alive)) {
+      const isBomb  = p.hasBomb;
+      const isMe    = p.id === socket.id;
+      const pulse   = 0.5 + 0.5 * Math.sin(t * 7);
+
+      // Trail particles
+      ptbSpawnTrail(p, isBomb ? 0.6 : 0.2);
+
+      // Outer glow
+      if (isBomb) {
+        const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R + 24 + pulse * 14);
+        gr.addColorStop(0,   `rgba(239,68,68,${0.45 + pulse * 0.3})`);
+        gr.addColorStop(0.5, 'rgba(239,68,68,0.15)');
+        gr.addColorStop(1,   'rgba(239,68,68,0)');
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, R + 24 + pulse * 14, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R + 12);
+        gr.addColorStop(0, ptbRgba(p.color, 0.28));
+        gr.addColorStop(1, ptbRgba(p.color, 0));
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, R + 12, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Body
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Rim
+      ctx.strokeStyle = isBomb
+        ? `rgba(255,${Math.round(180 - pulse * 80)},80,0.95)`
+        : 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = isBomb ? 2.5 + pulse * 1.5 : 1.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // "me" dashed ring
+      if (isMe) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, R + 7, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Bomb emoji + pulsing rings
+      if (isBomb) {
+        const bobY = Math.sin(t * 5) * 3;
+        ctx.font      = `${18 + pulse * 5}px serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText('💣', p.x, p.y - R - 18 + bobY);
+
+        // Spread rings
+        for (let ri = 0; ri < 3; ri++) {
+          const ringFrac = ((t * 0.9 + ri * 0.33) % 1);
+          ctx.strokeStyle = `rgba(239,68,68,${(1 - ringFrac) * 0.5})`;
+          ctx.lineWidth   = 1;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, R + ringFrac * 40, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // Name label
+      const labelY = p.y - R - (isBomb ? 46 : 28);
+      ctx.font      = isMe ? 'bold 11px "Noto Sans",sans-serif' : '10px "Noto Sans",sans-serif';
+      ctx.textAlign = 'center';
+      const tw  = ctx.measureText(p.name).width;
+      const ph  = 14, pw = tw + 10;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.beginPath();
+      ctx.roundRect(p.x - pw / 2, labelY - ph + 3, pw, ph, 5);
+      ctx.fill();
+      ctx.fillStyle = isMe ? '#f0f4ff' : 'rgba(255,255,255,0.82)';
+      ctx.fillText(p.name, p.x, labelY);
+    }
+  }
+
+  // Explosion flash overlay
+  if (ptb.exploFlash > 0) {
+    ctx.fillStyle = `rgba(255,110,30,${ptb.exploFlash})`;
+    ctx.fillRect(-6, -6, W + 12, H + 12);
+  }
+
+  ctx.restore();
+}
+
+// ── Input ──────────────────────────────────────────────────
+function ptbInitInput() {
+  document.addEventListener('keydown', (e) => {
+    if (!$('screen-pass-bomb').classList.contains('active')) return;
+    if (e.key==='ArrowUp'    || e.key==='w' || e.key==='W') ptb.keys.up    = true;
+    if (e.key==='ArrowDown'  || e.key==='s' || e.key==='S') ptb.keys.down  = true;
+    if (e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') ptb.keys.left  = true;
+    if (e.key==='ArrowRight' || e.key==='d' || e.key==='D') ptb.keys.right = true;
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key==='ArrowUp'    || e.key==='w' || e.key==='W') ptb.keys.up    = false;
+    if (e.key==='ArrowDown'  || e.key==='s' || e.key==='S') ptb.keys.down  = false;
+    if (e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') ptb.keys.left  = false;
+    if (e.key==='ArrowRight' || e.key==='d' || e.key==='D') ptb.keys.right = false;
+  });
+
+  // Touch/swipe for mobile
+  const c = $('ptb-canvas');
+  if (c) {
+    let tx0 = 0, ty0 = 0;
+    c.addEventListener('touchstart', (e) => { tx0 = e.touches[0].clientX; ty0 = e.touches[0].clientY; }, { passive: true });
+    c.addEventListener('touchmove',  (e) => {
+      const dx = e.touches[0].clientX - tx0, dy = e.touches[0].clientY - ty0;
+      ptb.keys.left  = dx < -10; ptb.keys.right = dx > 10;
+      ptb.keys.up    = dy < -10; ptb.keys.down  = dy > 10;
+    }, { passive: true });
+    c.addEventListener('touchend', () => { ptb.keys.left=ptb.keys.right=ptb.keys.up=ptb.keys.down=false; }, { passive: true });
+  }
+
+  // Send input to server at 20fps
+  ptb.inputInterval = setInterval(() => {
+    if (!ptb.state || ptb.state.phase !== 'PTB_PLAYING') return;
+    const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
+    const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    socket.emit('ptb_input', { dx: dx/len, dy: dy/len });
+  }, 50);
+}
+
+// ── HUD updates ────────────────────────────────────────────
+function ptbUpdateHUD(gs) {
+  if (!gs) return;
+  const alive = gs.players.filter((p) => p.alive).length;
+  $('ptb-alive-count').textContent = alive;
+
+  const tw = $('ptb-timer-wrap'), tn = $('ptb-timer-num');
+  if (tw && tn) {
+    if (gs.bombTimeLeft > 0) {
+      tn.textContent = gs.bombTimeLeft.toFixed(1);
+      tw.classList.toggle('danger', gs.bombTimeLeft < 5);
+    } else {
+      tn.textContent = '––';
+      tw.classList.remove('danger');
+    }
+  }
+
+  const mb = $('ptb-modifier-banner');
+  if (mb) {
+    if (gs.modifier && gs.modifierTLeft > 0) {
+      mb.classList.remove('hidden');
+      mb.style.borderColor = gs.modifier.color;
+      const mi = $('ptb-modifier-icon'), mn = $('ptb-modifier-name');
+      if (mi) mi.textContent = gs.modifier.icon + ' ';
+      if (mn) mn.textContent = gs.modifier.name + ' (' + gs.modifierTLeft.toFixed(0) + 's)';
+    } else {
+      mb.classList.add('hidden');
+    }
+  }
+}
+
+// ── Toast helper ───────────────────────────────────────────
+function ptbShowToast(elId, text, ms = 2400) {
+  const el = $(elId);
+  if (!el) return;
+  const sp = el.querySelector('span');
+  if (sp) sp.textContent = text;
+  el.classList.remove('hidden');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.add('hidden'), ms);
+}
+
+// ── Countdown overlay ──────────────────────────────────────
+function ptbShowCountdown(n) {
+  const ov  = $('ptb-overlay-countdown');
+  const num = $('ptb-countdown-num');
+  if (!ov || !num) return;
+  if (n <= 0) {
+    ov.classList.add('hidden');
+  } else {
+    ov.classList.remove('hidden');
+    // Animate: re-trigger CSS animation by cloning replacement
+    num.style.animation = 'none';
+    num.textContent     = n;
+    // Force reflow then re-apply
+    void num.offsetWidth;
+    num.style.animation = '';
+  }
+}
+
+// ── Game-over screen ───────────────────────────────────────
+function showPTBGameOver(data) {
+  $('ptb-overlay-gameover').classList.remove('hidden');
+  const wn = $('ptb-winner-name');
+  if (wn) {
+    wn.textContent = data.winner ? data.winner.name + ' wins!' : 'Nobody survived!';
+    if (data.winner) wn.style.color = '#fcd34d';
+  }
+
+  const se = $('ptb-final-scores');
+  if (se) {
+    const rx = ['rank-gold','rank-silver','rank-bronze'];
+    se.innerHTML = data.finalScores.map((p, i) => `
+      <div class="ptb-score-row" style="animation-delay:${i * 0.08}s">
+        <span class="ptb-score-rank">${i < 3 ? `<i class="fi fi-sr-trophy ${rx[i]}"></i>` : (i+1)+'.'}  </span>
+        <div class="ptb-score-avatar" style="background:${p.color}">${escHtml(p.name[0].toUpperCase())}</div>
+        <span class="ptb-score-name">${escHtml(p.name)}${p.id === socket.id ? ' <span style="opacity:.5">(you)</span>' : ''}</span>
+        <span class="ptb-score-pts">${p.score} pts</span>
+      </div>`).join('');
+  }
+
+  const isHost = state.room && state.room.host === socket.id;
+  $('ptb-go-host-controls').classList.toggle('hidden', !isHost);
+}
+
+// ─────────────────────────────────────────────────────────
 //  SOCKET EVENTS
 // ─────────────────────────────────────────────────────────
 socket.on('connect', () => {
@@ -1374,6 +1834,28 @@ socket.on('player_left', ({ playerId, room }) => {
 });
 
 socket.on('phase_changed', ({ phase, data }) => {
+  // ── Pass the Bomb phases ─────────────────────────────────────
+  if (phase.startsWith('PTB_')) {
+    if (!$('screen-pass-bomb').classList.contains('active')) {
+      enterPassBomb(state.room);
+    }
+    if (data.players) state.room.players = data.players;
+    ptb.state = data;
+    ptbUpdateHUD(data);
+
+    if (phase === 'PTB_COUNTDOWN') {
+      ptbShowCountdown(data.countdownLeft);
+    }
+    if (phase === 'PTB_PLAYING') {
+      $('ptb-overlay-countdown').classList.add('hidden');
+      $('ptb-overlay-gameover').classList.add('hidden');
+    }
+    if (phase === 'PTB_GAME_OVER') {
+      showPTBGameOver(data);
+    }
+    return;
+  }
+
   // ── Drawing Dash phases ──────────────────────────────────────
   if (phase.startsWith('DD_')) {
     if (!$('screen-drawing-dash').classList.contains('active')) {
@@ -1460,6 +1942,62 @@ socket.on('dd_hint', ({ hint }) => {
   if (!dd.isDrawer) ddSetWordHint(hint, null);
   showToast('\uD83D\uDD0D A hint was revealed!', 1800);
 });
+
+// ── Pass the Bomb socket events ─────────────────────────────────
+
+socket.on('ptb_state', (gs) => {
+  ptb.state = gs;
+  ptbUpdateHUD(gs);
+});
+
+socket.on('ptb_countdown', ({ count }) => {
+  ptbShowCountdown(count);
+  if (count <= 0) $('ptb-overlay-countdown').classList.add('hidden');
+});
+
+socket.on('ptb_bomb_transfer', ({ fromName, toName, toId }) => {
+  const msg = toId === socket.id
+    ? `💣 You got the bomb!`
+    : `💣 ${escHtml(toName)} has the bomb!`;
+  ptbShowToast('ptb-transfer-toast', msg, 1800);
+});
+
+socket.on('ptb_explosion', ({ eliminatedId, eliminatedName, eliminatedColor, x, y, players }) => {
+  ptbSpawnExplosion(x, y, eliminatedColor || '#ef4444');
+  const msg = eliminatedId === socket.id ? '💥 You exploded!' : `💥 ${escHtml(eliminatedName)} exploded!`;
+  ptbShowToast('ptb-elim-toast', msg, 3000);
+  if (players && ptb.state) {
+    ptb.state.players = players;
+    ptbUpdateHUD(ptb.state);
+  }
+});
+
+socket.on('ptb_new_bomb', ({ holderId, holderName, bombTimeLeft, bombMaxTime, players }) => {
+  if (ptb.state) {
+    ptb.state.bombHolderId  = holderId;
+    ptb.state.bombTimeLeft  = bombTimeLeft;
+    ptb.state.bombMaxTime   = bombMaxTime;
+    if (players) ptb.state.players = players;
+  }
+  const msg = holderId === socket.id ? '💣 You have the bomb!' : `💣 ${escHtml(holderName)} has the next bomb!`;
+  ptbShowToast('ptb-transfer-toast', msg, 2000);
+});
+
+socket.on('ptb_modifier', ({ modifier, duration }) => {
+  const msg = `${modifier.icon} ${modifier.name}${duration > 0 ? ` (${duration}s)` : ''}`;
+  ptbShowToast('ptb-mod-toast', msg, 3000);
+  if (ptb.state) {
+    ptb.state.modifier     = modifier;
+    ptb.state.modifierTLeft = duration;
+  }
+});
+
+socket.on('ptb_modifier_end', () => {
+  if (ptb.state) ptb.state.modifier = null;
+  $('ptb-modifier-banner')?.classList.add('hidden');
+});
+
+// ── Drawing Dash socket events ───────────────────────────────
 
 socket.on('dd_player_guessed', ({ playerId, name, rank, score, players }) => {
   if (!state._ddGuessedIds) state._ddGuessedIds = [];
@@ -1687,3 +2225,12 @@ $('dd-custom-word').addEventListener('keydown', (e) => {
 // Play Again / Back to Games
 $('dd-play-again').addEventListener('click', () => { socket.emit('restart_game', {}); });
 $('dd-back-hub').addEventListener('click', () => showScreen('hub'));
+
+// ─────────────────────────────────────────────────────────
+//  PASS THE BOMB – UI EVENT LISTENERS
+// ─────────────────────────────────────────────────────────
+$('ptb-play-again').addEventListener('click', () => { socket.emit('restart_game', {}); });
+$('ptb-back-hub').addEventListener('click',   () => {
+  ptbStopRenderLoop();
+  showScreen('hub');
+});

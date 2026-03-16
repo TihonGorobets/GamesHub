@@ -522,6 +522,102 @@
 
   </div><!-- #screen-drawing-dash -->
 
+  <!-- ═══════════════════════════════════════════════════════════
+       SCREEN 7 – PASS THE BOMB
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-pass-bomb" class="screen">
+
+    <!-- ── HUD ──────────────────────────────────────────── -->
+    <div class="ptb-hud" id="ptb-hud">
+      <div class="ptb-hud-left">
+        <div class="ptb-alive-badge" id="ptb-alive-badge">
+          <i class="fi fi-rr-users" aria-hidden="true"></i>
+          <span id="ptb-alive-count">0</span> alive
+        </div>
+      </div>
+
+      <div class="ptb-hud-center">
+        <div class="ptb-timer-wrap" id="ptb-timer-wrap">
+          <span class="ptb-bomb-icon" aria-hidden="true">💣</span>
+          <span class="ptb-timer-num" id="ptb-timer-num">––</span>
+          <span class="ptb-timer-sub">seconds</span>
+        </div>
+        <!-- Modifier banner (hidden until active) -->
+        <div class="ptb-modifier-banner hidden" id="ptb-modifier-banner">
+          <span id="ptb-modifier-icon"></span>
+          <span id="ptb-modifier-name"></span>
+        </div>
+      </div>
+
+      <div class="ptb-hud-right">
+        <div class="room-badge" style="background:rgba(255,255,255,0.06)">
+          <i class="fi fi-rr-key" aria-hidden="true"></i>
+          <span id="ptb-room-code" class="room-code">––––</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Arena canvas ──────────────────────────────────── -->
+    <div class="ptb-arena-wrap" id="ptb-arena-wrap">
+      <canvas id="ptb-canvas" width="800" height="560"></canvas>
+    </div>
+
+    <!-- ── Keyboard hint bar ──────────────────────────────── -->
+    <div class="ptb-keyhint">
+      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> to move</span>
+    </div>
+
+    <!-- ── Countdown overlay ─────────────────────────────── -->
+    <div class="ptb-overlay hidden" id="ptb-overlay-countdown">
+      <div class="ptb-countdown-modal">
+        <div class="ptb-countdown-num" id="ptb-countdown-num">3</div>
+        <div class="ptb-countdown-sub">Get ready!</div>
+      </div>
+    </div>
+
+    <!-- ── Elimination toast ─────────────────────────────── -->
+    <div class="ptb-elim-toast hidden" id="ptb-elim-toast">
+      <span id="ptb-elim-text">💥 Player eliminated!</span>
+    </div>
+
+    <!-- ── Transfer toast ────────────────────────────────── -->
+    <div class="ptb-transfer-toast hidden" id="ptb-transfer-toast">
+      <span id="ptb-transfer-text"></span>
+    </div>
+
+    <!-- ── Modifier toast ────────────────────────────────── -->
+    <div class="ptb-mod-toast hidden" id="ptb-mod-toast">
+      <span id="ptb-mod-toast-text"></span>
+    </div>
+
+    <!-- ── Game over overlay ─────────────────────────────── -->
+    <div class="ptb-overlay hidden" id="ptb-overlay-gameover">
+      <div class="ptb-gameover-modal">
+        <div class="ptb-winner-banner" id="ptb-winner-banner">
+          <div class="ptb-winner-crown">👑</div>
+          <div class="ptb-winner-name" id="ptb-winner-name">Winner!</div>
+          <div class="ptb-winner-sub">Survived the blast!</div>
+        </div>
+
+        <div class="ptb-final-scores" id="ptb-final-scores">
+          <!-- injected by JS -->
+        </div>
+
+        <div class="ptb-go-actions">
+          <div id="ptb-go-host-controls" class="host-controls hidden">
+            <button class="btn btn-primary ptb-play-again-btn" id="ptb-play-again">
+              <i class="fi fi-rr-rotate-right" aria-hidden="true"></i> Play Again
+            </button>
+          </div>
+          <button class="btn btn-ghost" id="ptb-back-hub">
+            <i class="fi fi-rr-apps" aria-hidden="true"></i> Back to Games
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- #screen-pass-bomb -->
+
   <!-- Toast notification -->
   <div id="toast" class="toast hidden"></div>
 
