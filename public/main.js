@@ -1412,8 +1412,11 @@ function enterPassBomb(room) {
   $('ptb-overlay-gameover').classList.add('hidden');
   $('ptb-modifier-banner').classList.add('hidden');
 
-  ptbFitCanvas();
-  ptbStartRenderLoop();
+  // Defer fit+render so the screen has been laid out by the browser first
+  requestAnimationFrame(() => {
+    ptbFitCanvas();
+    ptbStartRenderLoop();
+  });
 }
 
 // ── Fit canvas to arena wrap ────────────────────────────────
@@ -1422,7 +1425,11 @@ function ptbFitCanvas() {
   const wrap = $('ptb-arena-wrap');
   if (!wrap) return;
   const maxW = wrap.clientWidth, maxH = wrap.clientHeight;
-  if (!maxW || !maxH) return;
+  if (!maxW || !maxH) {
+    // Layout not ready yet – retry on next frame
+    requestAnimationFrame(ptbFitCanvas);
+    return;
+  }
   const ratio = PTB_ARENA_W / PTB_ARENA_H;
   let vW = maxW, vH = maxW / ratio;
   if (vH > maxH) { vH = maxH; vW = maxH * ratio; }
@@ -1438,9 +1445,22 @@ function ptbStartRenderLoop() {
     ptb.raf = requestAnimationFrame(loop);
     const dt = Math.min((now - ptb.lastTime) / 1000, 0.08);
     ptb.lastTime = now;
-    ptbRender(dt);
+    try { ptbRender(dt); } catch (err) { console.error('[PTB render]', err); }
   };
   ptb.raf = requestAnimationFrame(loop);
+}
+
+// ── Manual rounded-rect (ctx.roundRect not in older browsers) ──
+function ptbRoundRect(ctx, x, y, w, h, r) {
+  if (w < 2 * r) r = w / 2;
+  if (h < 2 * r) r = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x,     y + h, r);
+  ctx.arcTo(x,     y + h, x,     y,     r);
+  ctx.arcTo(x,     y,     x + w, y,     r);
+  ctx.closePath();
 }
 
 function ptbStopRenderLoop() {
@@ -1670,8 +1690,7 @@ function ptbRender(dt) {
       const tw  = ctx.measureText(p.name).width;
       const ph  = 14, pw = tw + 10;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.beginPath();
-      ctx.roundRect(p.x - pw / 2, labelY - ph + 3, pw, ph, 5);
+      ptbRoundRect(ctx, p.x - pw / 2, labelY - ph + 3, pw, ph, 5);
       ctx.fill();
       ctx.fillStyle = isMe ? '#f0f4ff' : 'rgba(255,255,255,0.82)';
       ctx.fillText(p.name, p.x, labelY);
