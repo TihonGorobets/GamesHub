@@ -743,7 +743,7 @@ function enterDrawingDash(room) {
 // ── Save canvas snapshot to undo stack ─────────────────────
 function ddSaveUndo() {
   if (!dd.ctx) return;
-  dd.undoStack.push(dd.ctx.getImageData(0, 0, 800, 600));
+  dd.undoStack.push(dd.ctx.getImageData(0, 0, dd.canvas.width, dd.canvas.height));
   if (dd.undoStack.length > DD_UNDO_MAX) dd.undoStack.shift();
 }
 
@@ -753,16 +753,18 @@ function ddUndo() {
   const snap = dd.undoStack.pop();
   dd.ctx.putImageData(snap, 0, 0);
   // Send snapshot to remote players
-  const dataURL = dd.canvas.toDataURL('image/webp', 0.8);
+  const dataURL = dd.canvas.toDataURL('image/png');
   socket.emit('dd_draw', { type: 'undo-snapshot', dataURL });
 }
 
 // ── Clear the canvas to white ────────────────────────────────
 function ddClearCanvas() {
   if (!dd.ctx) return;
-  dd.ctx.clearRect(0, 0, 800, 600);
+  // Keep the bitmap fully opaque so page background never shows through.
+  dd.ctx.globalCompositeOperation = 'source-over';
+  dd.ctx.globalAlpha = 1;
   dd.ctx.fillStyle = '#ffffff';
-  dd.ctx.fillRect(0, 0, 800, 600);
+  dd.ctx.fillRect(0, 0, dd.canvas.width, dd.canvas.height);
 }
 
 // ── Coordinate mapping (CSS-scaled canvas → logical 800×600) ─
@@ -849,7 +851,14 @@ function ddApplyDraw(ev) {
   // Restore a full snapshot (undo received from drawer)
   if (ev.type === 'undo-snapshot') {
     const img = new Image();
-    img.onload = () => ctx.drawImage(img, 0, 0);
+    img.onload = () => {
+      // Flatten onto a white background and scale to cover the full canvas.
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, dd.canvas.width, dd.canvas.height);
+      ctx.drawImage(img, 0, 0, dd.canvas.width, dd.canvas.height);
+    };
     img.src = ev.dataURL;
     return;
   }
@@ -860,6 +869,8 @@ function ddApplyDraw(ev) {
   }
 
   if (ev.type === 'begin') {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.moveTo(ev.x, ev.y);
     ctx.strokeStyle = ev.color;
@@ -890,8 +901,8 @@ function ddApplyDraw(ev) {
 // ── Flood fill ───────────────────────────────────────────────
 function ddDoFill(startX, startY, hexColor) {
   const ctx    = dd.ctx;
-  const width  = 800;
-  const height = 600;
+  const width  = dd.canvas.width;
+  const height = dd.canvas.height;
 
   const sx = Math.round(startX);
   const sy = Math.round(startY);

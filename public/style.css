@@ -1587,6 +1587,8 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   border-radius: 10px;
   box-shadow: 0 2px 16px rgba(0,0,0,0.35);
   background: #ffffff;
+  aspect-ratio: 4 / 3;
+  width: 100%;
 }
 #dd-canvas {
   display: block;
