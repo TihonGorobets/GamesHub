@@ -709,18 +709,20 @@ const DD_PALETTE = [
 
 // Local drawing state
 const dd = {
-  canvas:    null,
-  ctx:       null,
-  isDrawer:  false,
-  tool:      'brush',  // brush | eraser | fill
-  color:     '#171717',
-  size:      10,
-  drawing:   false,
-  lastX:     0,
-  lastY:     0,
-  roundTime: 80,    // updated from server
-  totalTime: 80,
+  canvas:     null,
+  ctx:        null,
+  isDrawer:   false,
+  tool:       'brush',  // brush | eraser | fill
+  color:      '#171717',
+  size:       10,
+  drawing:    false,
+  lastX:      0,
+  lastY:      0,
+  roundTime:  80,
+  totalTime:  80,
+  undoStack:  [],       // ImageData snapshots for undo
 };
+const DD_UNDO_MAX = 30;
 
 // ── Enter the Drawing Dash screen ───────────────────────────
 function enterDrawingDash(room) {
@@ -738,7 +740,24 @@ function enterDrawingDash(room) {
   }
 }
 
-// ── Clear the canvas to white ───────────────────────────────
+// ── Save canvas snapshot to undo stack ─────────────────────
+function ddSaveUndo() {
+  if (!dd.ctx) return;
+  dd.undoStack.push(dd.ctx.getImageData(0, 0, 800, 600));
+  if (dd.undoStack.length > DD_UNDO_MAX) dd.undoStack.shift();
+}
+
+// ── Perform undo ─────────────────────────────────────────────
+function ddUndo() {
+  if (!dd.isDrawer || !dd.ctx || dd.undoStack.length === 0) return;
+  const snap = dd.undoStack.pop();
+  dd.ctx.putImageData(snap, 0, 0);
+  // Send snapshot to remote players
+  const dataURL = dd.canvas.toDataURL('image/webp', 0.8);
+  socket.emit('dd_draw', { type: 'undo-snapshot', dataURL });
+}
+
+// ── Clear the canvas to white ────────────────────────────────
 function ddClearCanvas() {
   if (!dd.ctx) return;
   dd.ctx.clearRect(0, 0, 800, 600);
@@ -769,10 +788,12 @@ function ddInitCanvas() {
     const { x, y } = ddCanvasXY(e);
 
     if (dd.tool === 'fill') {
+      ddSaveUndo();
       ddDoFill(x, y, dd.color);
       socket.emit('dd_draw', { type: 'fill', x, y, color: dd.color });
       return;
     }
+    ddSaveUndo();
     dd.drawing = true;
     dd.lastX = x; dd.lastY = y;
     socket.emit('dd_draw', { type: 'begin', x, y, color: ddEffectiveColor(), size: dd.size });
@@ -799,6 +820,14 @@ function ddInitCanvas() {
   c.addEventListener('pointermove', onMove);
   c.addEventListener('pointerup',   onUp);
   c.addEventListener('pointerleave', onUp);
+
+  // Keyboard undo (Ctrl+Z)
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && dd.isDrawer) {
+      e.preventDefault();
+      ddUndo();
+    }
+  });
 }
 
 function ddEffectiveColor() {
@@ -811,6 +840,14 @@ function ddApplyDraw(ev) {
   const ctx = dd.ctx;
 
   if (ev.type === 'clear') { ddClearCanvas(); return; }
+
+  // Restore a full snapshot (undo received from drawer)
+  if (ev.type === 'undo-snapshot') {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0);
+    img.src = ev.dataURL;
+    return;
+  }
 
   if (ev.type === 'fill') {
     ddDoFill(ev.x, ev.y, ev.color);
@@ -894,11 +931,20 @@ function ddInitToolbar() {
     `).join('');
     palette.querySelectorAll('.dd-color-swatch').forEach((s) => {
       s.addEventListener('click', () => {
-        dd.color = s.dataset.color;
+        ddPickColor(s.dataset.color);
         palette.querySelectorAll('.dd-color-swatch').forEach((el) => el.classList.remove('active'));
         s.classList.add('active');
-        if (dd.tool !== 'fill') ddSetTool('brush');
       });
+    });
+  }
+
+  // Native colour picker
+  const picker = $('dd-color-picker');
+  if (picker) {
+    picker.addEventListener('input', () => {
+      ddPickColor(picker.value);
+      // Deselect swatches since colour is custom
+      if (palette) palette.querySelectorAll('.dd-color-swatch').forEach((el) => el.classList.remove('active'));
     });
   }
 
@@ -916,14 +962,24 @@ function ddInitToolbar() {
     });
   });
 
+  // Undo button
+  const undoBtn = $('dd-tool-undo');
+  if (undoBtn) undoBtn.addEventListener('click', ddUndo);
+
   // Clear button
   const clearBtn = $('dd-tool-clear');
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
+      ddSaveUndo();
       ddClearCanvas();
       socket.emit('dd_draw', { type: 'clear' });
     });
   }
+}
+
+function ddPickColor(hex) {
+  dd.color = hex;
+  if (dd.tool !== 'fill') ddSetTool('brush');
 }
 
 function ddSetTool(tool) {
@@ -1011,6 +1067,7 @@ function ddSetWordHint(hint, word) {
 function showDDPickingWord(data) {
   state._ddGuessedIds = [];
   dd.isDrawer = (socket.id === data.drawerId);
+  dd.undoStack = [];   // clear undo history between rounds
 
   ddSetTimer(data.timeLeft, 15);
   ddSetWordHint('', '');
@@ -1295,8 +1352,8 @@ socket.on('dd_chat_message', (msg) => {
 });
 
 socket.on('dd_hint', ({ hint }) => {
-  ddSetWordHint(hint, null);
-  showToast('🔍 A hint was revealed!', 1800);
+  if (!dd.isDrawer) ddSetWordHint(hint, null);
+  showToast('\uD83D\uDD0D A hint was revealed!', 1800);
 });
 
 socket.on('dd_player_guessed', ({ playerId, name, rank, score, players }) => {

@@ -395,6 +395,10 @@
             <div class="dd-palette" id="dd-palette">
               <!-- injected by JS -->
             </div>
+            <label class="dd-color-picker-wrap" title="Custom colour">
+              <i class="fi fi-rr-rainbow" aria-hidden="true"></i>
+              <input type="color" id="dd-color-picker" value="#000000" tabindex="-1">
+            </label>
           </div>
           <!-- Brush / Eraser / Fill -->
           <div class="dd-tool-group">
@@ -410,13 +414,24 @@
           </div>
           <!-- Brush size -->
           <div class="dd-tool-group">
-            <button class="dd-size-btn" data-size="4"  title="Small">S</button>
-            <button class="dd-size-btn active" data-size="10" title="Medium">M</button>
-            <button class="dd-size-btn" data-size="22" title="Large">L</button>
-            <button class="dd-size-btn" data-size="40" title="XL">XL</button>
+            <button class="dd-size-btn" data-size="4" title="Tiny (4 px)">
+              <svg viewBox="0 0 28 28" width="28" height="28"><circle cx="14" cy="14" r="2" fill="currentColor"/></svg>
+            </button>
+            <button class="dd-size-btn active" data-size="10" title="Medium (10 px)">
+              <svg viewBox="0 0 28 28" width="28" height="28"><circle cx="14" cy="14" r="5" fill="currentColor"/></svg>
+            </button>
+            <button class="dd-size-btn" data-size="22" title="Large (22 px)">
+              <svg viewBox="0 0 28 28" width="28" height="28"><circle cx="14" cy="14" r="9" fill="currentColor"/></svg>
+            </button>
+            <button class="dd-size-btn" data-size="40" title="XL (40 px)">
+              <svg viewBox="0 0 28 28" width="28" height="28"><circle cx="14" cy="14" r="13" fill="currentColor"/></svg>
+            </button>
           </div>
-          <!-- Clear -->
+          <!-- Undo / Clear -->
           <div class="dd-tool-group">
+            <button class="dd-tool-btn" id="dd-tool-undo" title="Undo (Ctrl+Z)">
+              <i class="fi fi-rr-rotate-left" aria-hidden="true"></i>
+            </button>
             <button class="dd-tool-btn dd-tool-clear" id="dd-tool-clear" title="Clear canvas">
               <i class="fi fi-rr-trash" aria-hidden="true"></i>
             </button>
