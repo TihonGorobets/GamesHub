@@ -771,9 +771,11 @@ function ddCanvasXY(e) {
   const scaleX = 800 / rect.width;
   const scaleY = 600 / rect.height;
   const src    = e.touches ? e.touches[0] : e;
+  const rawX = (src.clientX - rect.left) * scaleX;
+  const rawY = (src.clientY - rect.top)  * scaleY;
   return {
-    x: Math.round((src.clientX - rect.left) * scaleX),
-    y: Math.round((src.clientY - rect.top)  * scaleY),
+    x: Math.max(0, Math.min(800, rawX)),
+    y: Math.max(0, Math.min(600, rawY)),
   };
 }
 
@@ -887,6 +889,11 @@ function ddDoFill(startX, startY, hexColor) {
   const ctx    = dd.ctx;
   const width  = 800;
   const height = 600;
+
+  const sx = Math.round(startX);
+  const sy = Math.round(startY);
+  if (sx < 0 || sx >= width || sy < 0 || sy >= height) return;
+
   const imgData = ctx.getImageData(0, 0, width, height);
   const data    = imgData.data;
 
@@ -894,12 +901,12 @@ function ddDoFill(startX, startY, hexColor) {
   const g = parseInt(hexColor.slice(3, 5), 16);
   const b = parseInt(hexColor.slice(5, 7), 16);
 
-  const idx = (Math.round(startY) * width + Math.round(startX)) * 4;
+  const idx = (sy * width + sx) * 4;
   const tr  = data[idx], tg = data[idx + 1], tb = data[idx + 2];
 
   if (tr === r && tg === g && tb === b) return; // already target colour
 
-  const stack = [Math.round(startX), Math.round(startY)];
+  const stack = [sx, sy];
   const visited = new Uint8Array(width * height);
 
   function getIdx(x, y) { return (y * width + x) * 4; }
