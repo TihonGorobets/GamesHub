@@ -16,11 +16,12 @@ const ARENA_W         = 800;
 const ARENA_H         = 560;
 const PLAYER_R        = 20;        // collision radius
 const PLAYER_SPEED    = 200;       // px/s base speed
-const TICK_MS         = 50;        // 20 fps server tick
+const TICK_MS         = 33;        // 30 fps server tick (reduces perceived input lag)
 const BOMB_MIN        = 13;        // seconds
 const BOMB_MAX        = 22;        // seconds
 const COUNTDOWN_SECS  = 3;
 const EXPLODE_PAUSE   = 2800;      // ms between explosion and new bomb
+const PASS_COOLDOWN_MS = 1200;     // ms after receiving bomb before it can be transferred again
 const PLACE_SCORES    = [100, 60, 40, 25, 15, 10, 5, 5, 5, 5];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,6 +130,7 @@ class PassBombState {
       alive:      true,
       score:      rp.score || 0,
       stickyUntil: 0,
+      passCooldownUntil: 0,
     }));
 
     this.phase          = 'PTB_COUNTDOWN';
@@ -184,7 +186,7 @@ function startCountdown(io, room) {
   const alive = gs.players;
   const spawns = shuffle(generateSpawnPositions(alive.length));
   alive.forEach((p, i) => {
-    Object.assign(p, { ...spawns[i], vx: 0, vy: 0, alive: true, hasBomb: false, stickyUntil: 0, inputDx: 0, inputDy: 0 });
+    Object.assign(p, { ...spawns[i], vx: 0, vy: 0, alive: true, hasBomb: false, stickyUntil: 0, passCooldownUntil: 0, inputDx: 0, inputDy: 0 });
   });
 
   io.to(room.id).emit('phase_changed', {
@@ -305,8 +307,9 @@ function gameTick(io, room) {
 
   // ── Bomb transfer ───────────────────────────────────────
   if (bombHolder) {
-    const isSticky = gs.modifier?.id === 'sticky_bomb' || (bombHolder.stickyUntil > now);
-    if (!isSticky) {
+    const isSticky  = gs.modifier?.id === 'sticky_bomb' || (bombHolder.stickyUntil > now);
+    const isCooling = bombHolder.passCooldownUntil > now;
+    if (!isSticky && !isCooling) {
       for (const other of alive) {
         if (other.id === bombHolder.id) continue;
         if (dist2(bombHolder.x, bombHolder.y, other.x, other.y) < (PLAYER_R * 2.1) ** 2) {
@@ -346,6 +349,9 @@ function transferBomb(io, room, from, to) {
   from.hasBomb   = false;
   to.hasBomb     = true;
   gs.bombHolderId = to.id;
+
+  // Always apply a brief pass cooldown to prevent instant ping-pong transfers
+  to.passCooldownUntil = Date.now() + PASS_COOLDOWN_MS;
 
   // Sticky modifier makes bomb stick for 3s after receiving
   if (gs.modifier?.id === 'sticky_bomb') {

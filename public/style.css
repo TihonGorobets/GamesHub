@@ -1996,6 +1996,8 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   flex-direction: column;
   background: #09090f;
   overflow: hidden !important;
+  overflow-x: hidden !important;
+  overflow-y: hidden !important;
   /* Must be constrained to viewport — base .screen is position:fixed inset:0
      but overflow-y:auto on .screen allows scrolling; override it hard here */
   height: 100%;

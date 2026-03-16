@@ -196,7 +196,11 @@ function stopFloaterLoop() {
 // ─────────────────────────────────────────────────────────
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
-  $(`screen-${name}`).classList.add('active');
+  const next = $(`screen-${name}`);
+  next.classList.add('active');
+  // Prevent previously-scrolled screens from showing mid-content
+  next.scrollTop = 0;
+  window.scrollTo(0, 0);
 
   if (name === 'landing') {
     // Show music toggle + try autoplay
@@ -1382,11 +1386,13 @@ const ptb = {
   fitBound:     false,
   state:        null,   // latest server state snapshot
   renderPos:    {},     // playerId -> { x, y } interpolated render positions
+  lastStateAt:  0,      // performance.now() timestamp of last ptb_state snapshot
   particles:    [],     // visual particles
   exploFlash:   0,      // 0..1 explosion flash overlay
   shakeTime:    0,      // seconds of remaining screen shake
   lastTime:     0,
   keys:         { up: false, down: false, left: false, right: false },
+  lastSent:     { dx: 0, dy: 0 },
   inputInterval: null,
   modAnim:      0,
 };
@@ -1604,8 +1610,9 @@ function ptbRender(dt) {
   // Players
   if (gs?.players) {
     const R = 20;
-    // Exponential lerp factor — smooth at 60fps, responsive within one server tick (50ms)
-    const lerpK = 1 - Math.exp(-dt * 28);
+    // Exponential lerp factor — keep others smooth; keep *local* more responsive
+    const lerpKRemote = 1 - Math.exp(-dt * 28);
+    const lerpKMe     = 1 - Math.exp(-dt * 60);
 
     // Dead ghosts (behind living)
     for (const p of gs.players.filter((pp) => !pp.alive)) {
@@ -1622,17 +1629,18 @@ function ptbRender(dt) {
 
     // Living players
     for (const p of gs.players.filter((pp) => pp.alive)) {
+      const isMe    = p.id === socket.id;
       // Interpolate position client-side so 20fps server ticks look silky at 60fps
       let rp = ptb.renderPos[p.id];
       if (!rp) {
         ptb.renderPos[p.id] = rp = { x: p.x, y: p.y };
       } else {
-        rp.x += (p.x - rp.x) * lerpK;
-        rp.y += (p.y - rp.y) * lerpK;
+        const lk = isMe ? lerpKMe : lerpKRemote;
+        rp.x += (p.x - rp.x) * lk;
+        rp.y += (p.y - rp.y) * lk;
       }
 
       const isBomb  = p.hasBomb;
-      const isMe    = p.id === socket.id;
       const pulse   = 0.5 + 0.5 * Math.sin(t * 7);
 
       // Trail particles (use interpolated pos so trails are smooth too)
@@ -1727,18 +1735,34 @@ function ptbRender(dt) {
 
 // ── Input ──────────────────────────────────────────────────
 function ptbInitInput() {
+  const sendNow = () => {
+    if (!ptb.state || ptb.state.phase !== 'PTB_PLAYING') return;
+    const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
+    const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const ndx = dx / len;
+    const ndy = dy / len;
+    // Only emit when input vector changes (cuts spam while improving responsiveness)
+    if (Math.abs(ndx - ptb.lastSent.dx) < 0.001 && Math.abs(ndy - ptb.lastSent.dy) < 0.001) return;
+    ptb.lastSent.dx = ndx;
+    ptb.lastSent.dy = ndy;
+    socket.emit('ptb_input', { dx: ndx, dy: ndy });
+  };
+
   document.addEventListener('keydown', (e) => {
     if (!$('screen-pass-bomb').classList.contains('active')) return;
     if (e.key==='ArrowUp'    || e.key==='w' || e.key==='W') ptb.keys.up    = true;
     if (e.key==='ArrowDown'  || e.key==='s' || e.key==='S') ptb.keys.down  = true;
     if (e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') ptb.keys.left  = true;
     if (e.key==='ArrowRight' || e.key==='d' || e.key==='D') ptb.keys.right = true;
+    sendNow();
   });
   document.addEventListener('keyup', (e) => {
     if (e.key==='ArrowUp'    || e.key==='w' || e.key==='W') ptb.keys.up    = false;
     if (e.key==='ArrowDown'  || e.key==='s' || e.key==='S') ptb.keys.down  = false;
     if (e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') ptb.keys.left  = false;
     if (e.key==='ArrowRight' || e.key==='d' || e.key==='D') ptb.keys.right = false;
+    sendNow();
   });
 
   // Touch/swipe for mobile
@@ -1750,18 +1774,25 @@ function ptbInitInput() {
       const dx = e.touches[0].clientX - tx0, dy = e.touches[0].clientY - ty0;
       ptb.keys.left  = dx < -10; ptb.keys.right = dx > 10;
       ptb.keys.up    = dy < -10; ptb.keys.down  = dy > 10;
+      sendNow();
     }, { passive: true });
-    c.addEventListener('touchend', () => { ptb.keys.left=ptb.keys.right=ptb.keys.up=ptb.keys.down=false; }, { passive: true });
+    c.addEventListener('touchend', () => {
+      ptb.keys.left=ptb.keys.right=ptb.keys.up=ptb.keys.down=false;
+      sendNow();
+    }, { passive: true });
   }
 
-  // Send input to server at 20fps
+  // Keepalive: re-send at higher rate while playing (reduces perceived input lag)
   ptb.inputInterval = setInterval(() => {
     if (!ptb.state || ptb.state.phase !== 'PTB_PLAYING') return;
     const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
     const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
     const len = Math.sqrt(dx*dx + dy*dy) || 1;
-    socket.emit('ptb_input', { dx: dx/len, dy: dy/len });
-  }, 50);
+    const ndx = dx/len, ndy = dy/len;
+    ptb.lastSent.dx = ndx;
+    ptb.lastSent.dy = ndy;
+    socket.emit('ptb_input', { dx: ndx, dy: ndy });
+  }, 33);
 }
 
 // ── HUD updates ────────────────────────────────────────────
@@ -1883,6 +1914,7 @@ socket.on('phase_changed', ({ phase, data }) => {
     ptbUpdateHUD(data);
 
     if (phase === 'PTB_COUNTDOWN') {
+      $('ptb-overlay-gameover').classList.add('hidden');
       ptbShowCountdown(data.countdownLeft);
     }
     if (phase === 'PTB_PLAYING') {
@@ -1987,6 +2019,7 @@ socket.on('dd_hint', ({ hint }) => {
 
 socket.on('ptb_state', (gs) => {
   ptb.state = gs;
+  ptb.lastStateAt = performance.now();
   ptbUpdateHUD(gs);
 });
 
