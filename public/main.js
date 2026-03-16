@@ -1366,6 +1366,8 @@ function showDDGameOver(data) {
 
 const PTB_ARENA_W = 800;
 const PTB_ARENA_H = 560;
+const PTB_PLAYER_SPEED = 200; // must mirror server PLAYER_SPEED
+const PTB_PLAYER_R = 20;
 
 // Mirror of server obstacle list
 const PTB_OBSTACLES = [
@@ -1522,6 +1524,63 @@ function ptbRgba(hex, a) {
   return `rgba(${r},${g},${b},${a})`;
 }
 
+// Client-side prediction helpers (mirror server physics for local player)
+function ptbCircleAABB(cx, cy, r, bx, by, bw, bh) {
+  const nx = Math.max(bx, Math.min(cx, bx + bw));
+  const ny = Math.max(by, Math.min(cy, by + bh));
+  const dx = cx - nx, dy = cy - ny;
+  return dx * dx + dy * dy < r * r;
+}
+
+function ptbResolveCircleAABB(pos, bx, by, bw, bh, r) {
+  if (!ptbCircleAABB(pos.x, pos.y, r, bx, by, bw, bh)) return;
+  const nx = Math.max(bx, Math.min(pos.x, bx + bw));
+  const ny = Math.max(by, Math.min(pos.y, by + bh));
+  let dx = pos.x - nx, dy = pos.y - ny;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d < 0.0001) {
+    const oL = pos.x - bx, oR = bx + bw - pos.x, oT = pos.y - by, oB = by + bh - pos.y;
+    const m = Math.min(oL, oR, oT, oB);
+    if (m === oL) pos.x = bx - r;
+    else if (m === oR) pos.x = bx + bw + r;
+    else if (m === oT) pos.y = by - r;
+    else pos.y = by + bh + r;
+    return;
+  }
+  const pen = r - d;
+  if (pen > 0) { pos.x += (dx / d) * pen; pos.y += (dy / d) * pen; }
+}
+
+function ptbPredictLocal(rp, dt, gs) {
+  // Run the same physics the server runs, so local player moves instantly
+  const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
+  const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const speedMult = (gs.modifier && gs.modifier.id === 'speed_surge') ? 1.7 : 1.0;
+  let spd = PTB_PLAYER_SPEED * speedMult;
+  let sx = (dx / len) * spd;
+  let sy = (dy / len) * spd;
+
+  if (gs.modifier && gs.modifier.id === 'gravity_shift') {
+    sx *= 0.55;
+    sy = sy * 0.55 + spd * 0.38;
+  }
+
+  rp.x += sx * dt;
+  rp.y += sy * dt;
+
+  // Arena boundary
+  rp.x = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_W - PTB_PLAYER_R, rp.x));
+  rp.y = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_H - PTB_PLAYER_R, rp.y));
+
+  // Obstacle collision
+  for (const [bx, by, bw, bh] of PTB_OBSTACLES) {
+    ptbResolveCircleAABB(rp, bx, by, bw, bh, PTB_PLAYER_R);
+  }
+  rp.x = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_W - PTB_PLAYER_R, rp.x));
+  rp.y = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_H - PTB_PLAYER_R, rp.y));
+}
+
 // ── Main renderer ──────────────────────────────────────────
 function ptbRender(dt) {
   const ctx = ptb.ctx, canvas = ptb.canvas;
@@ -1610,9 +1669,8 @@ function ptbRender(dt) {
   // Players
   if (gs?.players) {
     const R = 20;
-    // Exponential lerp factor — keep others smooth; keep *local* more responsive
+    // Exponential lerp factor for remote players
     const lerpKRemote = 1 - Math.exp(-dt * 28);
-    const lerpKMe     = 1 - Math.exp(-dt * 60);
 
     // Dead ghosts (behind living)
     for (const p of gs.players.filter((pp) => !pp.alive)) {
@@ -1630,14 +1688,21 @@ function ptbRender(dt) {
     // Living players
     for (const p of gs.players.filter((pp) => pp.alive)) {
       const isMe    = p.id === socket.id;
-      // Interpolate position client-side so 20fps server ticks look silky at 60fps
+      // Interpolate position client-side so server ticks look smooth at 60fps
       let rp = ptb.renderPos[p.id];
       if (!rp) {
         ptb.renderPos[p.id] = rp = { x: p.x, y: p.y };
+      } else if (isMe && gs.phase === 'PTB_PLAYING') {
+        // LOCAL PLAYER: run client-side prediction for instant response,
+        // then gently reconcile toward authoritative server position.
+        ptbPredictLocal(rp, dt, gs);
+        const reconcile = 1 - Math.exp(-dt * 12);
+        rp.x += (p.x - rp.x) * reconcile;
+        rp.y += (p.y - rp.y) * reconcile;
       } else {
-        const lk = isMe ? lerpKMe : lerpKRemote;
-        rp.x += (p.x - rp.x) * lk;
-        rp.y += (p.y - rp.y) * lk;
+        // REMOTE PLAYERS: smooth interpolation
+        rp.x += (p.x - rp.x) * lerpKRemote;
+        rp.y += (p.y - rp.y) * lerpKRemote;
       }
 
       const isBomb  = p.hasBomb;

@@ -17,8 +17,8 @@ const ARENA_H         = 560;
 const PLAYER_R        = 20;        // collision radius
 const PLAYER_SPEED    = 200;       // px/s base speed
 const TICK_MS         = 33;        // 30 fps server tick (reduces perceived input lag)
-const BOMB_MIN        = 13;        // seconds
-const BOMB_MAX        = 22;        // seconds
+const BOMB_MIN        = 20;        // seconds
+const BOMB_MAX        = 30;        // seconds
 const COUNTDOWN_SECS  = 3;
 const EXPLODE_PAUSE   = 2800;      // ms between explosion and new bomb
 const PASS_COOLDOWN_MS = 1200;     // ms after receiving bomb before it can be transferred again
@@ -112,6 +112,7 @@ function generateSpawnPositions(count) {
 function clearTimers(gs) {
   if (gs._tick)      { clearInterval(gs._tick);  gs._tick      = null; }
   if (gs._countdown) { clearInterval(gs._countdown); gs._countdown = null; }
+  if (gs._explodeTimeout) { clearTimeout(gs._explodeTimeout); gs._explodeTimeout = null; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ class PassBombState {
     this.lastTickTime   = Date.now();
     this._tick          = null;
     this._countdown     = null;
+    this._explodeTimeout = null;
   }
 
   alivePlayers() { return this.players.filter((p) => p.alive); }
@@ -156,8 +158,8 @@ class PassBombState {
         id:      p.id,
         name:    p.name,
         color:   p.color,
-        x:       Math.round(p.x),
-        y:       Math.round(p.y),
+        x:       +p.x.toFixed(1),
+        y:       +p.y.toFixed(1),
         hasBomb: p.hasBomb,
         alive:   p.alive,
         score:   p.score,
@@ -405,10 +407,11 @@ function explodeBomb(io, room, player) {
       if (p) p.score += PLACE_SCORES[idx + 1] || 5;
     });
 
-    setTimeout(() => endGame(io, room, winner), EXPLODE_PAUSE);
+    gs._explodeTimeout = setTimeout(() => { gs._explodeTimeout = null; endGame(io, room, winner); }, EXPLODE_PAUSE);
   } else {
     // Continue with a new bomb
-    setTimeout(() => {
+    gs._explodeTimeout = setTimeout(() => {
+      gs._explodeTimeout = null;
       assignBomb(gs, player.id);
       gs.phase = 'PTB_PLAYING';
 
@@ -497,8 +500,10 @@ function handleEvent(io, socket, room, event, data) {
 
     case 'restart_game': {
       if (socket.id !== room.host) return;
-      if (gs.phase !== 'PTB_GAME_OVER') return;
+      if (gs.phase !== 'PTB_GAME_OVER' && gs.phase !== 'PTB_EXPLOSION') return;
       clearTimers(gs);
+      // Clear any pending explosion→endGame timeouts
+      if (gs._explodeTimeout) { clearTimeout(gs._explodeTimeout); gs._explodeTimeout = null; }
       room.players.forEach((p) => { p.score = 0; });
       init(io, room);
       break;

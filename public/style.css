@@ -2160,7 +2160,10 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   backdrop-filter: blur(8px);
   z-index: 50;
 }
-#screen-pass-bomb { position: relative; }
+/* NOTE: Do NOT set position:relative here — it would override the
+   position:fixed from .screen and push PTB below other screens.
+   position:fixed already creates a containing block for the
+   position:absolute overlays above. */
 
 /* ── Countdown overlay ────────────────────────────────────────── */
 .ptb-countdown-modal {
