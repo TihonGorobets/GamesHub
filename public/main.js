@@ -944,19 +944,37 @@ function ddDoFill(startX, startY, hexColor) {
   const imgData = ctx.getImageData(0, 0, width, height);
   const data    = imgData.data;
 
+  // Flatten any transparency onto white so page/background can never bleed through
+  // and so flood fill works on a stable, opaque bitmap.
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    if (a < 255) {
+      const alpha = a / 255;
+      data[i]     = Math.round(data[i]     * alpha + 255 * (1 - alpha));
+      data[i + 1] = Math.round(data[i + 1] * alpha + 255 * (1 - alpha));
+      data[i + 2] = Math.round(data[i + 2] * alpha + 255 * (1 - alpha));
+      data[i + 3] = 255;
+    }
+  }
+
   const r = parseInt(hexColor.slice(1, 3), 16);
   const g = parseInt(hexColor.slice(3, 5), 16);
   const b = parseInt(hexColor.slice(5, 7), 16);
 
   const idx = (sy * width + sx) * 4;
-  const tr  = data[idx], tg = data[idx + 1], tb = data[idx + 2];
+  const tr  = data[idx], tg = data[idx + 1], tb = data[idx + 2], ta = data[idx + 3];
 
-  if (tr === r && tg === g && tb === b) return; // already target colour
+  if (tr === r && tg === g && tb === b && ta === 255) return; // already target colour
 
   const stack = [sx, sy];
   const visited = new Uint8Array(width * height);
-
-  function getIdx(x, y) { return (y * width + x) * 4; }
+  const tolerance = 6;
+  function closeToTarget(pi) {
+    return Math.abs(data[pi] - tr) <= tolerance
+      && Math.abs(data[pi + 1] - tg) <= tolerance
+      && Math.abs(data[pi + 2] - tb) <= tolerance
+      && Math.abs(data[pi + 3] - ta) <= tolerance;
+  }
 
   while (stack.length) {
     const cy = stack.pop();
@@ -965,7 +983,7 @@ function ddDoFill(startX, startY, hexColor) {
     const vi = cy * width + cx;
     if (visited[vi]) continue;
     const pi = vi * 4;
-    if (data[pi] !== tr || data[pi + 1] !== tg || data[pi + 2] !== tb) continue;
+    if (!closeToTarget(pi)) continue;
     visited[vi] = 1;
     data[pi] = r; data[pi + 1] = g; data[pi + 2] = b; data[pi + 3] = 255;
     stack.push(cx + 1, cy, cx - 1, cy, cx, cy + 1, cx, cy - 1);
