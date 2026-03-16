@@ -1392,8 +1392,9 @@ const ptb = {
 
 // ── Enter screen ───────────────────────────────────────────
 function enterPassBomb(room) {
-  state.room = room;
-  $('ptb-room-code').textContent = room.id;
+  state.room = room || state.room || { id: '----', players: [] };
+  const roomCode = state.room && state.room.id ? state.room.id : '----';
+  $('ptb-room-code').textContent = roomCode;
   showScreen('pass-bomb');
 
   if (!ptb.canvas) {
@@ -1855,10 +1856,11 @@ socket.on('player_left', ({ playerId, room }) => {
 socket.on('phase_changed', ({ phase, data }) => {
   // ── Pass the Bomb phases ─────────────────────────────────────
   if (phase.startsWith('PTB_')) {
+    state.selectedGameId = 'pass-bomb';
     if (!$('screen-pass-bomb').classList.contains('active')) {
-      enterPassBomb(state.room);
+      enterPassBomb(state.room || { id: '----', players: [] });
     }
-    if (data.players) state.room.players = data.players;
+    if (data.players && state.room) state.room.players = data.players;
     ptb.state = data;
     ptbUpdateHUD(data);
 
@@ -1877,10 +1879,11 @@ socket.on('phase_changed', ({ phase, data }) => {
 
   // ── Drawing Dash phases ──────────────────────────────────────
   if (phase.startsWith('DD_')) {
+    state.selectedGameId = 'drawing-dash';
     if (!$('screen-drawing-dash').classList.contains('active')) {
-      enterDrawingDash(state.room);
+      enterDrawingDash(state.room || { id: '----', players: [] });
     }
-    if (data.players) state.room.players = data.players;
+    if (data.players && state.room) state.room.players = data.players;
     switch (phase) {
       case 'DD_PICKING_WORD': showDDPickingWord(data); break;
       case 'DD_DRAWING':      showDDDrawing(data);     break;
@@ -1895,7 +1898,7 @@ socket.on('phase_changed', ({ phase, data }) => {
     enterGame(state.room);
   }
 
-  if (data.players) {
+  if (data.players && state.room) {
     state.room.players = data.players;
     renderScoreboard(data.players);
   }
