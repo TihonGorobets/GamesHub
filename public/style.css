@@ -1683,18 +1683,27 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  /* clip-path is required on Linux browsers to clip the native color input */
   clip-path: circle(50%);
-  border: 2px dashed rgba(255,255,255,0.45);
+  border: 1px solid rgba(255,255,255,0.4);
   cursor: pointer;
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
-  background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
-  transition: opacity 0.15s;
+  background: rgba(255,255,255,0.08);
+  transition: border-color 0.15s, transform 0.1s;
 }
-.dd-color-picker-wrap:hover { opacity: 0.85; }
-.dd-color-picker-wrap:hover { border-color: var(--primary); }
+.dd-color-picker-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--dd-picker-color, #171717);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
+}
+.dd-color-picker-wrap:hover {
+  border-color: var(--primary);
+  transform: scale(1.06);
+}
 .dd-color-picker-wrap i { display: none; }
 .dd-color-picker-wrap input[type=color] {
   position: absolute;
@@ -1705,6 +1714,8 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   cursor: pointer;
   padding: 0;
   border: none;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 /* Colour palette */
@@ -1832,24 +1843,24 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
 .dd-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(10, 10, 18, 0.75);
+  background: rgba(4, 6, 14, 0.84);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 50;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
   padding: 1rem;
 }
 #screen-drawing-dash { position: relative; }
 
 .dd-modal {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(19,23,38,0.96), rgba(12,16,28,0.96));
+  border: 1px solid rgba(255,255,255,0.18);
   border-radius: 16px;
   padding: 2rem 2.5rem;
   max-width: 480px;
   width: 100%;
-  box-shadow: 0 16px 60px rgba(0,0,0,0.5);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.62), inset 0 1px 0 rgba(255,255,255,0.05);
   animation: panelIn 0.25s ease;
   max-height: 90dvh;
   overflow-y: auto;
@@ -1858,9 +1869,9 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   font-size: 1.35rem;
   font-weight: 700;
   margin-bottom: 0.4rem;
-  color: var(--text-primary);
+  color: #f5f7ff;
 }
-.dd-modal-sub { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; }
+.dd-modal-sub { font-size: 0.85rem; color: rgba(221,226,245,0.84); margin-bottom: 1.25rem; }
 
 /* Word choice buttons */
 .dd-word-choices {
@@ -1873,9 +1884,9 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   width: 100%;
   padding: 0.85rem 1.2rem;
   border-radius: 12px;
-  border: 2px solid var(--border);
-  background: var(--surface-raised);
-  color: var(--text-primary);
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: #f5f7ff;
   font-size: 1.05rem;
   font-weight: 600;
   text-align: center;
@@ -1883,7 +1894,7 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   letter-spacing: 0.04em;
   transition: background var(--transition), border-color var(--transition), transform 0.1s;
 }
-.dd-word-btn:hover { background: var(--primary); border-color: var(--primary); color: #fff; transform: scale(1.02); }
+.dd-word-btn:hover { background: rgba(139,92,246,0.26); border-color: rgba(139,92,246,0.72); color: #fff; transform: scale(1.02); }
 
 .dd-custom-row {
   display: flex;
@@ -1895,12 +1906,12 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
 /* Round end — boosted contrast */
 .dd-modal-round-end {
   text-align: center;
-  background: var(--surface-raised);
-  border-color: var(--primary);
-  border-width: 2px;
+  background: linear-gradient(180deg, rgba(21,26,42,0.98), rgba(14,18,32,0.98));
+  border-color: rgba(255,255,255,0.2);
+  border-width: 1px;
 }
 .dd-modal-round-end .dd-reveal-word { text-shadow: 0 2px 12px rgba(139,92,246,0.4); }
-.dd-modal-round-end .dd-round-drawer-row { color: var(--text-secondary); }
+.dd-modal-round-end .dd-round-drawer-row { color: rgba(232,236,252,0.84); }
 .dd-reveal-word {
   font-size: 2rem;
   font-weight: 800;
@@ -1950,9 +1961,9 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   font-size: 0.85rem;
   padding: 0.35rem 0.6rem;
   border-radius: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #edf1ff;
 }
 .dd-score-row .score-pts { font-weight: 700; color: var(--primary); font-size: 0.9rem; }
 

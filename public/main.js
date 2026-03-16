@@ -704,7 +704,7 @@ const DD_PALETTE = [
   '#ffffff','#d4d4d4','#737373','#171717',
   '#ef4444','#f97316','#eab308','#22c55e',
   '#06b6d4','#3b82f6','#8b5cf6','#ec4899',
-  '#b45309','#065f46','#1e3a5f','#854d0e',
+  '#b45309','#065f46','#1e3a5f',
 ];
 
 // Local drawing state
@@ -1016,6 +1016,11 @@ function ddDoFill(startX, startY, hexColor) {
 function ddInitToolbar() {
   // Palette swatches
   const palette = $('dd-palette');
+  const pickerWrap = document.querySelector('.dd-color-picker-wrap');
+  const setPickerPreview = (hex) => {
+    if (pickerWrap) pickerWrap.style.setProperty('--dd-picker-color', hex);
+  };
+
   if (palette) {
     palette.innerHTML = DD_PALETTE.map((c) => `
       <div class="dd-color-swatch${c === dd.color ? ' active' : ''}" data-color="${c}"
@@ -1025,6 +1030,7 @@ function ddInitToolbar() {
     palette.querySelectorAll('.dd-color-swatch').forEach((s) => {
       s.addEventListener('click', () => {
         ddPickColor(s.dataset.color);
+        setPickerPreview(s.dataset.color);
         palette.querySelectorAll('.dd-color-swatch').forEach((el) => el.classList.remove('active'));
         s.classList.add('active');
       });
@@ -1034,8 +1040,11 @@ function ddInitToolbar() {
   // Native colour picker
   const picker = $('dd-color-picker');
   if (picker) {
+    picker.value = dd.color;
+    setPickerPreview(dd.color);
     picker.addEventListener('input', () => {
       ddPickColor(picker.value);
+      setPickerPreview(picker.value);
       // Deselect swatches since colour is custom
       if (palette) palette.querySelectorAll('.dd-color-swatch').forEach((el) => el.classList.remove('active'));
     });
