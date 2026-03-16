@@ -1862,7 +1862,7 @@ function ptbInitInput() {
 
 // ── HUD updates ────────────────────────────────────────────
 function ptbUpdateHUD(gs) {
-  if (!gs) return;
+  if (!gs || !gs.players) return;
   const alive = gs.players.filter((p) => p.alive).length;
   $('ptb-alive-count').textContent = alive;
 

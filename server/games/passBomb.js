@@ -469,6 +469,7 @@ function endGame(io, room, winner) {
     phase: 'PTB_GAME_OVER',
     data:  {
       phase:       'PTB_GAME_OVER',
+      players:     gs.serialise().players,
       winner:      winner ? { id: winner.id, name: winner.name, color: winner.color, score: winner.score } : null,
       finalScores: sorted.map((p) => ({ id: p.id, name: p.name, color: p.color, score: p.score })),
     },
@@ -541,7 +542,7 @@ function handleLeave(io, socketId, room) {
     clearTimers(gs);
     const winner = alive[0] || null;
     if (winner) winner.score += PLACE_SCORES[0];
-    setTimeout(() => endGame(io, room, winner), 1500);
+    gs._explodeTimeout = setTimeout(() => { gs._explodeTimeout = null; endGame(io, room, winner); }, 1500);
   }
 }
 
