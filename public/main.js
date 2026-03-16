@@ -721,6 +721,7 @@ const dd = {
   roundTime:  80,
   totalTime:  80,
   undoStack:  [],       // ImageData snapshots for undo
+  fitBound:   false,
 };
 const DD_UNDO_MAX = 30;
 
@@ -733,11 +734,42 @@ function enterDrawingDash(room) {
   // One-time canvas setup
   if (!dd.canvas) {
     dd.canvas = $('dd-canvas');
-    dd.ctx    = dd.canvas.getContext('2d');
+    dd.canvas.width = 800;
+    dd.canvas.height = 600;
+    dd.ctx    = dd.canvas.getContext('2d', { alpha: false, willReadFrequently: true }) || dd.canvas.getContext('2d');
     ddClearCanvas();
     ddInitToolbar();
     ddInitCanvas();
+
+    if (!dd.fitBound) {
+      dd.fitBound = true;
+      window.addEventListener('resize', ddFitCanvas);
+      window.addEventListener('orientationchange', () => setTimeout(ddFitCanvas, 50));
+    }
   }
+
+  ddFitCanvas();
+}
+
+// ── Fit visible canvas (Skribbl-like 4:3 scaling) ───────────
+function ddFitCanvas() {
+  if (!dd.canvas) return;
+  const wrap = $('dd-canvas-wrap');
+  if (!wrap) return;
+
+  const maxW = wrap.clientWidth;
+  const maxH = wrap.clientHeight;
+  if (!maxW || !maxH) return;
+
+  let viewW = maxW;
+  let viewH = (viewW * 3) / 4;
+  if (viewH > maxH) {
+    viewH = maxH;
+    viewW = (viewH * 4) / 3;
+  }
+
+  dd.canvas.style.width = `${Math.floor(viewW)}px`;
+  dd.canvas.style.height = `${Math.floor(viewH)}px`;
 }
 
 // ── Save canvas snapshot to undo stack ─────────────────────
@@ -770,6 +802,7 @@ function ddClearCanvas() {
 // ── Coordinate mapping (CSS-scaled canvas → logical 800×600) ─
 function ddCanvasXY(e) {
   const rect   = dd.canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return { x: 0, y: 0 };
   const w = dd.canvas.width;
   const h = dd.canvas.height;
   const scaleX = w / rect.width;
@@ -1086,6 +1119,7 @@ function ddSetWordHint(hint, word) {
 // ── Phase handlers ───────────────────────────────────────────
 
 function showDDPickingWord(data) {
+  ddFitCanvas();
   state._ddGuessedIds = [];
   dd.isDrawer = (socket.id === data.drawerId);
   dd.undoStack = [];   // clear undo history between rounds
@@ -1127,6 +1161,7 @@ function showDDPickingWord(data) {
 }
 
 function showDDDrawing(data) {
+  ddFitCanvas();
   state._ddGuessedIds = data.youGuessed ? [socket.id] : [];
   dd.isDrawer = data.isDrawer;
   dd.roundTime = 80;
@@ -1166,6 +1201,7 @@ function showDDDrawing(data) {
 }
 
 function showDDRoundEnd(data) {
+  ddFitCanvas();
   $('dd-overlay-round-end').classList.remove('hidden');
   $('dd-overlay-picking').classList.add('hidden');
   $('dd-tools').classList.add('hidden');
