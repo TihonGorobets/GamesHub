@@ -1992,8 +1992,8 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
    ══════════════════════════════════════════════════════════════ */
 
 #screen-pass-bomb {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   background: #09090f;
   overflow: hidden !important;
   overflow-x: hidden !important;
@@ -2110,7 +2110,6 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
 
 /* ── Arena ────────────────────────────────────────────────────── */
 .ptb-arena-wrap {
-  flex: 1;
   min-height: 0; /* critical: allows flex child to shrink below natural height */
   display: flex;
   align-items: center;

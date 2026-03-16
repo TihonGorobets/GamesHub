@@ -17,8 +17,8 @@ const ARENA_H         = 560;
 const PLAYER_R        = 20;        // collision radius
 const PLAYER_SPEED    = 200;       // px/s base speed
 const TICK_MS         = 33;        // 30 fps server tick (reduces perceived input lag)
-const BOMB_MIN        = 13;        // seconds
-const BOMB_MAX        = 22;        // seconds
+const BOMB_MIN        = 18;        // seconds
+const BOMB_MAX        = 28;        // seconds
 const COUNTDOWN_SECS  = 3;
 const EXPLODE_PAUSE   = 2800;      // ms between explosion and new bomb
 const PASS_COOLDOWN_MS = 1200;     // ms after receiving bomb before it can be transferred again
@@ -497,7 +497,7 @@ function handleEvent(io, socket, room, event, data) {
 
     case 'restart_game': {
       if (socket.id !== room.host) return;
-      if (gs.phase !== 'PTB_GAME_OVER') return;
+      if (!['PTB_GAME_OVER', 'PTB_EXPLOSION'].includes(gs.phase)) return;
       clearTimers(gs);
       room.players.forEach((p) => { p.score = 0; });
       init(io, room);
