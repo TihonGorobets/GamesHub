@@ -968,8 +968,10 @@ function ddDoFill(startX, startY, hexColor) {
 
   const stack = [sx, sy];
   const visited = new Uint8Array(width * height);
-  const tolerance = 6;
-  function closeToTarget(pi) {
+  // Adaptive tolerance: higher for very light/dark seed colours to absorb anti-aliased fringe.
+  const baseTolerance = (tr + tg + tb > 700 || tr + tg + tb < 60) ? 18 : 12;
+  const edgeTolerance = baseTolerance + 18;
+  function closeToTarget(pi, tolerance) {
     return Math.abs(data[pi] - tr) <= tolerance
       && Math.abs(data[pi + 1] - tg) <= tolerance
       && Math.abs(data[pi + 2] - tb) <= tolerance
@@ -983,11 +985,30 @@ function ddDoFill(startX, startY, hexColor) {
     const vi = cy * width + cx;
     if (visited[vi]) continue;
     const pi = vi * 4;
-    if (!closeToTarget(pi)) continue;
+    if (!closeToTarget(pi, baseTolerance)) continue;
     visited[vi] = 1;
     data[pi] = r; data[pi + 1] = g; data[pi + 2] = b; data[pi + 3] = 255;
     stack.push(cx + 1, cy, cx - 1, cy, cx, cy + 1, cx, cy - 1);
   }
+
+  // Edge cleanup pass: absorb 1px anti-aliased halo next to the filled region.
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const vi = y * width + x;
+      if (visited[vi]) continue;
+      const pi = vi * 4;
+      if (!closeToTarget(pi, edgeTolerance)) continue;
+
+      const left   = x > 0 ? visited[vi - 1] : 0;
+      const right  = x < width - 1 ? visited[vi + 1] : 0;
+      const up     = y > 0 ? visited[vi - width] : 0;
+      const down   = y < height - 1 ? visited[vi + width] : 0;
+      if (!(left || right || up || down)) continue;
+
+      data[pi] = r; data[pi + 1] = g; data[pi + 2] = b; data[pi + 3] = 255;
+    }
+  }
+
   ctx.putImageData(imgData, 0, 0);
 }
 
