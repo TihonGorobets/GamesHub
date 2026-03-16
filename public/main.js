@@ -1366,7 +1366,6 @@ function showDDGameOver(data) {
 
 const PTB_ARENA_W = 800;
 const PTB_ARENA_H = 560;
-const PTB_PLAYER_SPEED = 200;
 
 // Mirror of server obstacle list
 const PTB_OBSTACLES = [
@@ -1523,74 +1522,6 @@ function ptbRgba(hex, a) {
   return `rgba(${r},${g},${b},${a})`;
 }
 
-function ptbCircleAABB(cx, cy, r, bx, by, bw, bh) {
-  const nx = Math.max(bx, Math.min(cx, bx + bw));
-  const ny = Math.max(by, Math.min(cy, by + bh));
-  const dx = cx - nx, dy = cy - ny;
-  return dx * dx + dy * dy < r * r;
-}
-
-function ptbResolveCircleAABB(pos, bx, by, bw, bh, r) {
-  if (!ptbCircleAABB(pos.x, pos.y, r, bx, by, bw, bh)) return;
-  const nx = Math.max(bx, Math.min(pos.x, bx + bw));
-  const ny = Math.max(by, Math.min(pos.y, by + bh));
-  let dx = pos.x - nx, dy = pos.y - ny;
-  const d = Math.sqrt(dx * dx + dy * dy);
-  if (d < 0.0001) {
-    const oL = pos.x - bx, oR = bx + bw - pos.x, oT = pos.y - by, oB = by + bh - pos.y;
-    const m = Math.min(oL, oR, oT, oB);
-    if (m === oL) pos.x = bx - r;
-    else if (m === oR) pos.x = bx + bw + r;
-    else if (m === oT) pos.y = by - r;
-    else pos.y = by + bh + r;
-    return;
-  }
-  const penetration = r - d;
-  if (penetration > 0) {
-    pos.x += (dx / d) * penetration;
-    pos.y += (dy / d) * penetration;
-  }
-}
-
-function ptbPredictLocalPosition(pos, dt, gs) {
-  if (!gs || gs.phase !== 'PTB_PLAYING') return;
-
-  const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
-  const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  let ndx = dx / len;
-  let ndy = dy / len;
-  let spd = PTB_PLAYER_SPEED * (gs.modifier?.id === 'speed_surge' ? 1.7 : 1.0);
-
-  let sx = ndx * spd;
-  let sy = ndy * spd;
-
-  if (gs.modifier?.id === 'gravity_shift') {
-    sx *= 0.55;
-    sy = sy * 0.55 + spd * 0.38;
-  }
-
-  const bombHolder = gs.players?.find((p) => p.id === gs.bombHolderId && p.alive);
-  if (gs.modifier?.id === 'magnetic' && bombHolder && bombHolder.id !== socket.id) {
-    const target = ptb.renderPos[bombHolder.id] || bombHolder;
-    const mdx = target.x - pos.x;
-    const mdy = target.y - pos.y;
-    const md  = Math.sqrt(mdx * mdx + mdy * mdy) || 1;
-    sx += (mdx / md) * 70;
-    sy += (mdy / md) * 70;
-  }
-
-  pos.x += sx * dt;
-  pos.y += sy * dt;
-
-  const R = 20;
-  pos.x = Math.max(R, Math.min(PTB_ARENA_W - R, pos.x));
-  pos.y = Math.max(R, Math.min(PTB_ARENA_H - R, pos.y));
-  for (const [bx, by, bw, bh] of PTB_OBSTACLES) ptbResolveCircleAABB(pos, bx, by, bw, bh, R);
-  pos.x = Math.max(R, Math.min(PTB_ARENA_W - R, pos.x));
-  pos.y = Math.max(R, Math.min(PTB_ARENA_H - R, pos.y));
-}
-
 // ── Main renderer ──────────────────────────────────────────
 function ptbRender(dt) {
   const ctx = ptb.ctx, canvas = ptb.canvas;
@@ -1679,9 +1610,9 @@ function ptbRender(dt) {
   // Players
   if (gs?.players) {
     const R = 20;
-    // Remote players are smoothed heavily; local player uses prediction + reconciliation.
+    // Exponential lerp factor — keep others smooth; keep *local* more responsive
     const lerpKRemote = 1 - Math.exp(-dt * 28);
-    const reconcileKMe = 1 - Math.exp(-dt * 16);
+    const lerpKMe     = 1 - Math.exp(-dt * 60);
 
     // Dead ghosts (behind living)
     for (const p of gs.players.filter((pp) => !pp.alive)) {
@@ -1699,19 +1630,14 @@ function ptbRender(dt) {
     // Living players
     for (const p of gs.players.filter((pp) => pp.alive)) {
       const isMe    = p.id === socket.id;
-      // Interpolate position client-side so server ticks look silky at render-rate.
+      // Interpolate position client-side so 20fps server ticks look silky at 60fps
       let rp = ptb.renderPos[p.id];
       if (!rp) {
         ptb.renderPos[p.id] = rp = { x: p.x, y: p.y };
       } else {
-        if (isMe) {
-          ptbPredictLocalPosition(rp, dt, gs);
-          rp.x += (p.x - rp.x) * reconcileKMe;
-          rp.y += (p.y - rp.y) * reconcileKMe;
-        } else {
-          rp.x += (p.x - rp.x) * lerpKRemote;
-          rp.y += (p.y - rp.y) * lerpKRemote;
-        }
+        const lk = isMe ? lerpKMe : lerpKRemote;
+        rp.x += (p.x - rp.x) * lk;
+        rp.y += (p.y - rp.y) * lk;
       }
 
       const isBomb  = p.hasBomb;
