@@ -768,14 +768,17 @@ function ddClearCanvas() {
 // ── Coordinate mapping (CSS-scaled canvas → logical 800×600) ─
 function ddCanvasXY(e) {
   const rect   = dd.canvas.getBoundingClientRect();
-  const scaleX = 800 / rect.width;
-  const scaleY = 600 / rect.height;
+  const w = dd.canvas.width;
+  const h = dd.canvas.height;
+  const scaleX = w / rect.width;
+  const scaleY = h / rect.height;
   const src    = e.touches ? e.touches[0] : e;
   const rawX = (src.clientX - rect.left) * scaleX;
   const rawY = (src.clientY - rect.top)  * scaleY;
   return {
-    x: Math.max(0, Math.min(800, rawX)),
-    y: Math.max(0, Math.min(600, rawY)),
+    // Clamp to bitmap bounds so edge clicks still work
+    x: Math.max(0, Math.min(w - 1, rawX)),
+    y: Math.max(0, Math.min(h - 1, rawY)),
   };
 }
 

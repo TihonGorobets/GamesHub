@@ -1581,8 +1581,8 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
   overflow: hidden;
   border-radius: 10px;
   box-shadow: 0 2px 16px rgba(0,0,0,0.35);
@@ -1591,9 +1591,7 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
 #dd-canvas {
   display: block;
   width: 100%;
-  height: auto;
-  max-height: 100%;
-  aspect-ratio: 4 / 3;
+  height: 100%;
   background: #ffffff;
   cursor: crosshair;
   touch-action: none;
