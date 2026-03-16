@@ -1381,6 +1381,7 @@ const ptb = {
   raf:          null,
   fitBound:     false,
   state:        null,   // latest server state snapshot
+  renderPos:    {},     // playerId -> { x, y } interpolated render positions
   particles:    [],     // visual particles
   exploFlash:   0,      // 0..1 explosion flash overlay
   shakeTime:    0,      // seconds of remaining screen shake
@@ -1412,6 +1413,9 @@ function enterPassBomb(room) {
   $('ptb-overlay-countdown').classList.add('hidden');
   $('ptb-overlay-gameover').classList.add('hidden');
   $('ptb-modifier-banner').classList.add('hidden');
+
+  // Clear interpolation cache so stale positions from last round don't bleed in
+  ptb.renderPos = {};
 
   // Defer fit+render so the screen has been laid out by the browser first
   requestAnimationFrame(() => {
@@ -1600,50 +1604,64 @@ function ptbRender(dt) {
   // Players
   if (gs?.players) {
     const R = 20;
+    // Exponential lerp factor — smooth at 60fps, responsive within one server tick (50ms)
+    const lerpK = 1 - Math.exp(-dt * 28);
 
     // Dead ghosts (behind living)
     for (const p of gs.players.filter((pp) => !pp.alive)) {
+      // Snap dead players immediately — no need to interpolate corpses
+      const rp = ptb.renderPos[p.id] || { x: p.x, y: p.y };
+      ptb.renderPos[p.id] = rp;
       ctx.globalAlpha = 0.12;
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.arc(rp.x, rp.y, R, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
     }
 
     // Living players
     for (const p of gs.players.filter((pp) => pp.alive)) {
+      // Interpolate position client-side so 20fps server ticks look silky at 60fps
+      let rp = ptb.renderPos[p.id];
+      if (!rp) {
+        ptb.renderPos[p.id] = rp = { x: p.x, y: p.y };
+      } else {
+        rp.x += (p.x - rp.x) * lerpK;
+        rp.y += (p.y - rp.y) * lerpK;
+      }
+
       const isBomb  = p.hasBomb;
       const isMe    = p.id === socket.id;
       const pulse   = 0.5 + 0.5 * Math.sin(t * 7);
 
-      // Trail particles
-      ptbSpawnTrail(p, isBomb ? 0.6 : 0.2);
+      // Trail particles (use interpolated pos so trails are smooth too)
+      ptbSpawnTrail({ ...p, x: rp.x, y: rp.y }, isBomb ? 0.6 : 0.2);
 
       // Outer glow
       if (isBomb) {
-        const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R + 24 + pulse * 14);
+        const gr = ctx.createRadialGradient(rp.x, rp.y, 0, rp.x, rp.y, R + 24 + pulse * 14);
         gr.addColorStop(0,   `rgba(239,68,68,${0.45 + pulse * 0.3})`);
         gr.addColorStop(0.5, 'rgba(239,68,68,0.15)');
         gr.addColorStop(1,   'rgba(239,68,68,0)');
         ctx.fillStyle = gr;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, R + 24 + pulse * 14, 0, Math.PI * 2);
+        ctx.arc(rp.x, rp.y, R + 24 + pulse * 14, 0, Math.PI * 2);
         ctx.fill();
       } else {
-        const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R + 12);
+        const gr = ctx.createRadialGradient(rp.x, rp.y, 0, rp.x, rp.y, R + 12);
         gr.addColorStop(0, ptbRgba(p.color, 0.28));
         gr.addColorStop(1, ptbRgba(p.color, 0));
         ctx.fillStyle = gr;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, R + 12, 0, Math.PI * 2);
+        ctx.arc(rp.x, rp.y, R + 12, 0, Math.PI * 2);
         ctx.fill();
       }
 
       // Body
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.arc(rp.x, rp.y, R, 0, Math.PI * 2);
       ctx.fill();
 
       // Rim
@@ -1652,7 +1670,7 @@ function ptbRender(dt) {
         : 'rgba(255,255,255,0.3)';
       ctx.lineWidth = isBomb ? 2.5 + pulse * 1.5 : 1.5;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.arc(rp.x, rp.y, R, 0, Math.PI * 2);
       ctx.stroke();
 
       // "me" dashed ring
@@ -1661,7 +1679,7 @@ function ptbRender(dt) {
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 4]);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, R + 7, 0, Math.PI * 2);
+        ctx.arc(rp.x, rp.y, R + 7, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -1671,7 +1689,7 @@ function ptbRender(dt) {
         const bobY = Math.sin(t * 5) * 3;
         ctx.font      = `${18 + pulse * 5}px serif`;
         ctx.textAlign = 'center';
-        ctx.fillText('💣', p.x, p.y - R - 18 + bobY);
+        ctx.fillText('💣', rp.x, rp.y - R - 18 + bobY);
 
         // Spread rings
         for (let ri = 0; ri < 3; ri++) {
@@ -1679,22 +1697,22 @@ function ptbRender(dt) {
           ctx.strokeStyle = `rgba(239,68,68,${(1 - ringFrac) * 0.5})`;
           ctx.lineWidth   = 1;
           ctx.beginPath();
-          ctx.arc(p.x, p.y, R + ringFrac * 40, 0, Math.PI * 2);
+          ctx.arc(rp.x, rp.y, R + ringFrac * 40, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
 
       // Name label
-      const labelY = p.y - R - (isBomb ? 46 : 28);
+      const labelY = rp.y - R - (isBomb ? 46 : 28);
       ctx.font      = isMe ? 'bold 11px "Noto Sans",sans-serif' : '10px "Noto Sans",sans-serif';
       ctx.textAlign = 'center';
       const tw  = ctx.measureText(p.name).width;
       const ph  = 14, pw = tw + 10;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ptbRoundRect(ctx, p.x - pw / 2, labelY - ph + 3, pw, ph, 5);
+      ptbRoundRect(ctx, rp.x - pw / 2, labelY - ph + 3, pw, ph, 5);
       ctx.fill();
       ctx.fillStyle = isMe ? '#f0f4ff' : 'rgba(255,255,255,0.82)';
-      ctx.fillText(p.name, p.x, labelY);
+      ctx.fillText(p.name, rp.x, labelY);
     }
   }
 
