@@ -41,13 +41,16 @@ const WORD_LIST = [
 //  CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 const CHOOSE_TIME      = 15;    // seconds to pick a word
-const ROUND_TIME       = 80;    // seconds per drawing turn
+const ROUND_TIME       = 110;   // seconds per drawing turn
 const ROUND_END_WAIT   = 7000;  // ms before advancing after round ends
 
-const SCORE_FIRST_GUESS      = 300;
-const SCORE_GUESS_DECREMENT  = 50;
-const SCORE_MIN_GUESS        = 100;
-const SCORE_DRAWER_PER_GUESS = 50;
+// Scoring — intentionally modest so games feel balanced
+const SCORE_FIRST_GUESS      = 120;  // max points for the first correct guesser
+const SCORE_GUESS_DECREMENT  = 12;   // subtract per rank position
+const SCORE_MIN_GUESS        = 30;   // floor for guesser points
+const SCORE_TIME_BONUS_MAX   = 40;   // extra pts awarded for guessing early
+const SCORE_DRAWER_PER_GUESS = 18;   // drawer earns this per person who guesses
+const SCORE_DRAWER_NO_GUESS  = 12;   // flat bonus to drawer when nobody guesses (still tried)
 
 // Fraction of ROUND_TIME remaining when additional hint letters are revealed
 const HINT_THRESHOLDS = [0.55, 0.25];
@@ -319,8 +322,12 @@ function handleGuess(io, socket, room, rawText) {
   if (guess === word) {
     // ── Correct! ────────────────────────────────────────────
     gs.guessedIds.push(socket.id);
-    const rank  = gs.guessedIds.length;
-    const pts   = Math.max(SCORE_MIN_GUESS, SCORE_FIRST_GUESS - (rank - 1) * SCORE_GUESS_DECREMENT);
+    const rank = gs.guessedIds.length;
+    // Base score decreases with rank; add time bonus so earlier guesses score more
+    const base     = Math.max(SCORE_MIN_GUESS, SCORE_FIRST_GUESS - (rank - 1) * SCORE_GUESS_DECREMENT);
+    const timeFrac = Math.max(0, gs.timeLeft / ROUND_TIME);
+    const bonus    = Math.round(timeFrac * SCORE_TIME_BONUS_MAX);
+    const pts      = base + bonus;
     player.score += pts;
 
     broadcastChat(io, room, {
@@ -360,8 +367,14 @@ function endRound(io, room) {
 
   // Award drawer
   const drawer = room.players.find((p) => p.id === gs.drawerId);
-  if (drawer && gs.guessedIds.length > 0) {
-    drawer.score += gs.guessedIds.length * SCORE_DRAWER_PER_GUESS;
+  if (drawer) {
+    if (gs.guessedIds.length > 0) {
+      // Points per person who guessed
+      drawer.score += gs.guessedIds.length * SCORE_DRAWER_PER_GUESS;
+    } else {
+      // Nobody guessed — drawer still gets a small consolation bonus for trying
+      drawer.score += SCORE_DRAWER_NO_GUESS;
+    }
   }
 
   const entry = {

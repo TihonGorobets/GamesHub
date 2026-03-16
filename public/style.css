@@ -1683,14 +1683,17 @@ i.fi.host-crown { color: var(--amber); font-size: 0.9rem; }
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 2px dashed var(--border);
+  /* clip-path is required on Linux browsers to clip the native color input */
+  clip-path: circle(50%);
+  border: 2px dashed rgba(255,255,255,0.45);
   cursor: pointer;
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
   background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
-  transition: border-color 0.15s;
+  transition: opacity 0.15s;
 }
+.dd-color-picker-wrap:hover { opacity: 0.85; }
 .dd-color-picker-wrap:hover { border-color: var(--primary); }
 .dd-color-picker-wrap i { display: none; }
 .dd-color-picker-wrap input[type=color] {
