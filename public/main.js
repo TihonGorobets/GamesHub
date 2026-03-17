@@ -1373,6 +1373,7 @@ const PTB_PARTICLE_LIMIT = 180;
 const PTB_CORRECTION_EPSILON = 4;
 const PTB_MOVING_CORRECTION_DEADZONE = 18;
 const PTB_HARD_SNAP_DIST = 90;
+const PTB_INPUT_CHANGE_GRACE_MS = 140;
 const TICK_MS = 33; // server tick interval
 
 // Default obstacles (classic map) – will be overridden by server map data
@@ -1417,6 +1418,7 @@ const ptb = {
   inputSeq:     0,      // monotonic input sequence number
   simAcc:       0,      // local fixed-step accumulator (seconds)
   simStep:      1 / 60, // local sim step (seconds)
+  lastInputChangeAt: 0,
   modAnim:      0,
   _voteSelected: null,
 };
@@ -1702,6 +1704,10 @@ function ptbHasMovementInput() {
   return !!(ptb.keys.up || ptb.keys.down || ptb.keys.left || ptb.keys.right);
 }
 
+function ptbRecentlyChangedInput() {
+  return performance.now() - (ptb.lastInputChangeAt || 0) <= PTB_INPUT_CHANGE_GRACE_MS;
+}
+
 // ── Main renderer ──────────────────────────────────────────
 function ptbRender(dt) {
   const ctx = ptb.ctx, canvas = ptb.canvas;
@@ -1831,36 +1837,47 @@ function ptbRender(dt) {
         rp.y = rp.prevY + (rp._targetY - rp.prevY) * t2;
       }
 
+      let drawX = rp.x;
+      let drawY = rp.y;
+      if (isMe && gs.phase === 'PTB_PLAYING' && (ptb.simAcc || 0) > 0) {
+        // Render the leftover fraction of local movement too, so direction changes
+        // don't appear to "pause" between fixed simulation steps.
+        const temp = { x: rp.x, y: rp.y };
+        ptbPredictLocal(temp, Math.min(ptb.simAcc, ptb.simStep || (1 / 60)), gs);
+        drawX = temp.x;
+        drawY = temp.y;
+      }
+
       const isBomb  = p.hasBomb;
       const pulse   = 0.5 + 0.5 * Math.sin(t * 7);
 
       // Trail particles (use interpolated pos so trails are smooth too)
-      ptbSpawnTrail({ ...p, x: rp.x, y: rp.y }, isBomb ? 0.6 : 0.2);
+      ptbSpawnTrail({ ...p, x: drawX, y: drawY }, isBomb ? 0.6 : 0.2);
 
       // Outer glow
       if (isBomb) {
-        const gr = ctx.createRadialGradient(rp.x, rp.y, 0, rp.x, rp.y, R + 24 + pulse * 14);
+        const gr = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, R + 24 + pulse * 14);
         gr.addColorStop(0,   `rgba(239,68,68,${0.45 + pulse * 0.3})`);
         gr.addColorStop(0.5, 'rgba(239,68,68,0.15)');
         gr.addColorStop(1,   'rgba(239,68,68,0)');
         ctx.fillStyle = gr;
         ctx.beginPath();
-        ctx.arc(rp.x, rp.y, R + 24 + pulse * 14, 0, Math.PI * 2);
+        ctx.arc(drawX, drawY, R + 24 + pulse * 14, 0, Math.PI * 2);
         ctx.fill();
       } else {
-        const gr = ctx.createRadialGradient(rp.x, rp.y, 0, rp.x, rp.y, R + 12);
+        const gr = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, R + 12);
         gr.addColorStop(0, ptbRgba(p.color, 0.28));
         gr.addColorStop(1, ptbRgba(p.color, 0));
         ctx.fillStyle = gr;
         ctx.beginPath();
-        ctx.arc(rp.x, rp.y, R + 12, 0, Math.PI * 2);
+        ctx.arc(drawX, drawY, R + 12, 0, Math.PI * 2);
         ctx.fill();
       }
 
       // Body
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(rp.x, rp.y, R, 0, Math.PI * 2);
+      ctx.arc(drawX, drawY, R, 0, Math.PI * 2);
       ctx.fill();
 
       // Rim
@@ -1869,7 +1886,7 @@ function ptbRender(dt) {
         : 'rgba(255,255,255,0.3)';
       ctx.lineWidth = isBomb ? 2.5 + pulse * 1.5 : 1.5;
       ctx.beginPath();
-      ctx.arc(rp.x, rp.y, R, 0, Math.PI * 2);
+      ctx.arc(drawX, drawY, R, 0, Math.PI * 2);
       ctx.stroke();
 
       // "me" dashed ring
@@ -1878,7 +1895,7 @@ function ptbRender(dt) {
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 4]);
         ctx.beginPath();
-        ctx.arc(rp.x, rp.y, R + 7, 0, Math.PI * 2);
+        ctx.arc(drawX, drawY, R + 7, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -1888,7 +1905,7 @@ function ptbRender(dt) {
         const bobY = Math.sin(t * 5) * 3;
         ctx.font      = `${18 + pulse * 5}px serif`;
         ctx.textAlign = 'center';
-        ctx.fillText('💣', rp.x, rp.y - R - 18 + bobY);
+        ctx.fillText('💣', drawX, drawY - R - 18 + bobY);
 
         // Spread rings
         for (let ri = 0; ri < 3; ri++) {
@@ -1896,22 +1913,22 @@ function ptbRender(dt) {
           ctx.strokeStyle = `rgba(239,68,68,${(1 - ringFrac) * 0.5})`;
           ctx.lineWidth   = 1;
           ctx.beginPath();
-          ctx.arc(rp.x, rp.y, R + ringFrac * 40, 0, Math.PI * 2);
+          ctx.arc(drawX, drawY, R + ringFrac * 40, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
 
       // Name label
-      const labelY = rp.y - R - (isBomb ? 46 : 28);
+      const labelY = drawY - R - (isBomb ? 46 : 28);
       ctx.font      = isMe ? 'bold 11px "Noto Sans",sans-serif' : '10px "Noto Sans",sans-serif';
       ctx.textAlign = 'center';
       const tw  = ptbMeasureLabelWidth(ctx, p.name, isMe);
       const ph  = 14, pw = tw + 10;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ptbRoundRect(ctx, rp.x - pw / 2, labelY - ph + 3, pw, ph, 5);
+      ptbRoundRect(ctx, drawX - pw / 2, labelY - ph + 3, pw, ph, 5);
       ctx.fill();
       ctx.fillStyle = isMe ? '#f0f4ff' : 'rgba(255,255,255,0.82)';
-      ctx.fillText(p.name, rp.x, labelY);
+      ctx.fillText(p.name, drawX, labelY);
     }
   }
 
@@ -1934,8 +1951,17 @@ function ptbInitInput() {
     const ndx = dx / len;
     const ndy = dy / len;
     if (!force && Math.abs(ndx - ptb.lastSent.dx) < 0.001 && Math.abs(ndy - ptb.lastSent.dy) < 0.001) return;
+    const changedDir = Math.abs(ndx - ptb.lastSent.dx) >= 0.001 || Math.abs(ndy - ptb.lastSent.dy) >= 0.001;
     ptb.lastSent.dx = ndx;
     ptb.lastSent.dy = ndy;
+    if (changedDir) {
+      ptb.lastInputChangeAt = performance.now();
+      const me = ptb.renderPos[socket.id];
+      if (me) {
+        me._corrX = 0;
+        me._corrY = 0;
+      }
+    }
     ptb.inputSeq++;
     socket.emit('ptb_input', { dx: ndx, dy: ndy, seq: ptb.inputSeq });
   };
@@ -2360,12 +2386,16 @@ socket.on('ptb_state', (gs) => {
       const errY = me.y - rp.y;
       const errDist = Math.sqrt(errX * errX + errY * errY);
       const moving = ptbHasMovementInput();
+      const justChangedInput = ptbRecentlyChangedInput();
       if (errDist > PTB_HARD_SNAP_DIST) {
         rp.x = me.x;
         rp.y = me.y;
         rp._corrX = 0;
         rp._corrY = 0;
       } else if (errDist <= PTB_CORRECTION_EPSILON) {
+        rp._corrX = 0;
+        rp._corrY = 0;
+      } else if (moving && justChangedInput && errDist <= 28) {
         rp._corrX = 0;
         rp._corrY = 0;
       } else if (moving && errDist <= PTB_MOVING_CORRECTION_DEADZONE) {
