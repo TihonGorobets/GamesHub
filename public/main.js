@@ -1407,6 +1407,8 @@ const ptb = {
   lastSent:     { dx: 0, dy: 0 },
   inputInterval: null,
   inputSeq:     0,      // monotonic input sequence number
+  simAcc:       0,      // local fixed-step accumulator (seconds)
+  simStep:      1 / 60, // local sim step (seconds)
   modAnim:      0,
   _voteSelected: null,
 };
@@ -1437,6 +1439,7 @@ function enterPassBomb(room) {
 
   // Clear interpolation cache so stale positions from last round don't bleed in
   ptb.renderPos = {};
+  ptb.simAcc = 0;
 
   // Defer fit+render so the screen has been laid out by the browser first
   requestAnimationFrame(() => {
@@ -1718,19 +1721,27 @@ function ptbRender(dt) {
       }
 
       if (isMe && gs.phase === 'PTB_PLAYING') {
-        // LOCAL PLAYER: client-side prediction for instant response
-        ptbPredictLocal(rp, dt, gs);
-        // Smooth reconciliation toward server position (gentle pull)
-        const errX = p.x - rp.x, errY = p.y - rp.y;
-        const errDist = Math.sqrt(errX * errX + errY * errY);
-        if (errDist > 100) {
-          // Teleport if too far (e.g. respawn)
-          rp.x = p.x; rp.y = p.y;
-        } else if (errDist > 0.5) {
-          // Smooth blend: faster when error is large, gentler when small
-          const blend = 1 - Math.exp(-dt * (6 + errDist * 0.1));
-          rp.x += errX * blend;
-          rp.y += errY * blend;
+        // LOCAL PLAYER: fixed-step client-side prediction for 60fps smoothness
+        // (avoids jitter from variable frame dt)
+        ptb.simAcc = Math.min(0.25, (ptb.simAcc || 0) + dt);
+        const step = ptb.simStep || (1 / 60);
+        let subSteps = 0;
+        while (ptb.simAcc >= step && subSteps < 10) {
+          ptbPredictLocal(rp, step, gs);
+          ptb.simAcc -= step;
+          subSteps++;
+        }
+
+        // Apply server correction smoothly (correction is set only when a new
+        // server snapshot arrives; we do NOT pull toward stale p.x/p.y every frame)
+        if (typeof rp._corrX === 'number' && typeof rp._corrY === 'number') {
+          const k = 1 - Math.exp(-dt * 14);
+          rp.x += rp._corrX * k;
+          rp.y += rp._corrY * k;
+          rp._corrX *= (1 - k);
+          rp._corrY *= (1 - k);
+          if (Math.abs(rp._corrX) < 0.01) rp._corrX = 0;
+          if (Math.abs(rp._corrY) < 0.01) rp._corrY = 0;
         }
       } else {
         // REMOTE PLAYERS: snapshot interpolation
@@ -2151,6 +2162,7 @@ socket.on('phase_changed', ({ phase, data }) => {
       $('ptb-overlay-gameover').classList.add('hidden');
       // Fresh round: clear render position cache so no stale/NaN entries persist
       ptb.renderPos = {};
+      ptb.simAcc = 0;
       ptbShowCountdown(data.countdownLeft);
     }
     if (phase === 'PTB_PLAYING') {
@@ -2265,6 +2277,31 @@ socket.on('ptb_state', (gs) => {
   ptb.stateInterval = ptb.prevState ? (ptb.lastStateAt - (ptb._prevStateAt || ptb.lastStateAt)) : TICK_MS;
   ptb._prevStateAt = ptb.lastStateAt;
   ptbUpdateHUD(gs);
+
+  // Local reconciliation: when a new snapshot arrives, compute correction
+  // once and let the render loop apply it smoothly. This prevents the classic
+  // "rubber-band" stutter from correcting against stale server positions every frame.
+  try {
+    const me = gs?.players?.find((p) => p.id === socket.id);
+    if (me && typeof me.x === 'number' && typeof me.y === 'number') {
+      let rp = ptb.renderPos[me.id];
+      if (!rp || isNaN(rp.x) || isNaN(rp.y)) {
+        ptb.renderPos[me.id] = rp = { x: me.x, y: me.y, prevX: me.x, prevY: me.y };
+      }
+      const errX = me.x - rp.x;
+      const errY = me.y - rp.y;
+      const errDist = Math.sqrt(errX * errX + errY * errY);
+      if (errDist > 120) {
+        rp.x = me.x;
+        rp.y = me.y;
+        rp._corrX = 0;
+        rp._corrY = 0;
+      } else {
+        rp._corrX = errX;
+        rp._corrY = errY;
+      }
+    }
+  } catch (_) {}
 });
 
 // Map voting events
