@@ -1695,6 +1695,8 @@ function ptbRender(dt) {
 
     // Dead ghosts (behind living)
     for (const p of gs.players.filter((pp) => !pp.alive)) {
+      // Skip players with no position data (e.g. from map vote phase)
+      if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
       const rp = ptb.renderPos[p.id] || { x: p.x, y: p.y };
       ptb.renderPos[p.id] = rp;
       ctx.globalAlpha = 0.12;
@@ -1707,9 +1709,11 @@ function ptbRender(dt) {
 
     // Living players
     for (const p of gs.players.filter((pp) => pp.alive)) {
+      // Skip players with no position data
+      if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
       const isMe = p.id === socket.id;
       let rp = ptb.renderPos[p.id];
-      if (!rp) {
+      if (!rp || isNaN(rp.x) || isNaN(rp.y)) {
         ptb.renderPos[p.id] = rp = { x: p.x, y: p.y, prevX: p.x, prevY: p.y };
       }
 
@@ -1733,8 +1737,8 @@ function ptbRender(dt) {
         // Track previous and target positions for smooth interpolation
         if (rp._targetX === undefined || rp._targetX !== p.x || rp._targetY !== p.y) {
           // New server snapshot arrived – shift target
-          rp.prevX = rp._targetX !== undefined ? rp._targetX : rp.x;
-          rp.prevY = rp._targetY !== undefined ? rp._targetY : rp.y;
+          rp.prevX = (rp._targetX !== undefined && !isNaN(rp._targetX)) ? rp._targetX : p.x;
+          rp.prevY = (rp._targetY !== undefined && !isNaN(rp._targetY)) ? rp._targetY : p.y;
           rp._targetX = p.x;
           rp._targetY = p.y;
           rp._interpT = 0;
@@ -2135,6 +2139,9 @@ socket.on('phase_changed', ({ phase, data }) => {
     ptbUpdateHUD(data);
 
     if (phase === 'PTB_MAP_VOTE') {
+      // Map vote data has minimal players (no x/y) – do NOT let it
+      // reach the renderer which would poison renderPos with NaN.
+      ptb.state = null;
       $('ptb-overlay-gameover').classList.add('hidden');
       $('ptb-overlay-countdown').classList.add('hidden');
       ptbShowMapVote(data);
@@ -2142,6 +2149,8 @@ socket.on('phase_changed', ({ phase, data }) => {
     if (phase === 'PTB_COUNTDOWN') {
       $('ptb-overlay-mapvote').classList.add('hidden');
       $('ptb-overlay-gameover').classList.add('hidden');
+      // Fresh round: clear render position cache so no stale/NaN entries persist
+      ptb.renderPos = {};
       ptbShowCountdown(data.countdownLeft);
     }
     if (phase === 'PTB_PLAYING') {
