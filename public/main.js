@@ -1371,6 +1371,8 @@ const PTB_PLAYER_R = 20;
 const PTB_MAGNETIC_FORCE = 70; // must mirror server magnetic force
 const PTB_PARTICLE_LIMIT = 180;
 const PTB_CORRECTION_EPSILON = 4;
+const PTB_MOVING_CORRECTION_DEADZONE = 18;
+const PTB_HARD_SNAP_DIST = 90;
 const TICK_MS = 33; // server tick interval
 
 // Default obstacles (classic map) – will be overridden by server map data
@@ -1696,6 +1698,10 @@ function ptbPredictLocal(rp, dt, gs) {
   rp.y = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_H - PTB_PLAYER_R, rp.y));
 }
 
+function ptbHasMovementInput() {
+  return !!(ptb.keys.up || ptb.keys.down || ptb.keys.left || ptb.keys.right);
+}
+
 // ── Main renderer ──────────────────────────────────────────
 function ptbRender(dt) {
   const ctx = ptb.ctx, canvas = ptb.canvas;
@@ -1796,7 +1802,8 @@ function ptbRender(dt) {
         // Apply server correction smoothly (correction is set only when a new
         // server snapshot arrives; we do NOT pull toward stale p.x/p.y every frame)
         if (typeof rp._corrX === 'number' && typeof rp._corrY === 'number') {
-          const k = 1 - Math.exp(-dt * 14);
+          const moving = ptbHasMovementInput();
+          const k = 1 - Math.exp(-dt * (moving ? 7 : 14));
           rp.x += rp._corrX * k;
           rp.y += rp._corrY * k;
           rp._corrX *= (1 - k);
@@ -2352,7 +2359,8 @@ socket.on('ptb_state', (gs) => {
       const errX = me.x - rp.x;
       const errY = me.y - rp.y;
       const errDist = Math.sqrt(errX * errX + errY * errY);
-      if (errDist > 120) {
+      const moving = ptbHasMovementInput();
+      if (errDist > PTB_HARD_SNAP_DIST) {
         rp.x = me.x;
         rp.y = me.y;
         rp._corrX = 0;
@@ -2360,9 +2368,24 @@ socket.on('ptb_state', (gs) => {
       } else if (errDist <= PTB_CORRECTION_EPSILON) {
         rp._corrX = 0;
         rp._corrY = 0;
+      } else if (moving && errDist <= PTB_MOVING_CORRECTION_DEADZONE) {
+        // While actively moving, ignore small-to-medium drift. This avoids the
+        // visible jitter caused by constantly dragging the predicted position
+        // toward slightly older server snapshots.
+        rp._corrX = 0;
+        rp._corrY = 0;
       } else {
-        rp._corrX = errX;
-        rp._corrY = errY;
+        // Outside the deadzone, correct only the portion beyond it while moving.
+        // This preserves smoothness but still reins in larger desync.
+        if (moving) {
+          const excess = Math.max(0, errDist - PTB_MOVING_CORRECTION_DEADZONE);
+          const scale = excess / errDist;
+          rp._corrX = errX * scale;
+          rp._corrY = errY * scale;
+        } else {
+          rp._corrX = errX;
+          rp._corrY = errY;
+        }
       }
     }
   } catch (_) {}
