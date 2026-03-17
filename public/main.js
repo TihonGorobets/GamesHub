@@ -1368,6 +1368,7 @@ const PTB_ARENA_W = 800;
 const PTB_ARENA_H = 560;
 const PTB_PLAYER_SPEED = 200; // must mirror server PLAYER_SPEED
 const PTB_PLAYER_R = 20;
+const PTB_MAGNETIC_FORCE = 70; // must mirror server magnetic force
 const TICK_MS = 33; // server tick interval
 
 // Default obstacles (classic map) – will be overridden by server map data
@@ -1580,6 +1581,19 @@ function ptbPredictLocal(rp, dt, gs) {
   if (gs.modifier && gs.modifier.id === 'gravity_shift') {
     sx *= 0.55;
     sy = sy * 0.55 + spd * 0.38;
+  }
+
+  // Magnetic modifier: pull non-bomb-holders toward bomb holder
+  // (needs to mirror server or local prediction will constantly get corrected)
+  if (gs.modifier && gs.modifier.id === 'magnetic' && gs.bombHolderId && socket.id !== gs.bombHolderId) {
+    const holder = gs.players && gs.players.find((p) => p.id === gs.bombHolderId && p.alive);
+    if (holder && typeof holder.x === 'number' && typeof holder.y === 'number') {
+      const mdx = holder.x - rp.x;
+      const mdy = holder.y - rp.y;
+      const d = Math.sqrt(mdx * mdx + mdy * mdy) || 1;
+      sx += (mdx / d) * PTB_MAGNETIC_FORCE;
+      sy += (mdy / d) * PTB_MAGNETIC_FORCE;
+    }
   }
 
   rp.x += sx * dt;

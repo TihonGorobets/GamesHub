@@ -250,7 +250,7 @@ function startMapVote(io, room) {
   const shuffled   = shuffle(MAPS);
   gs.voteOptions   = shuffled.slice(0, 3).map((m) => m.id);
 
-  io.to(room.id).emit('phase_changed', {
+  const payload = {
     phase: 'PTB_MAP_VOTE',
     data: {
       phase:       'PTB_MAP_VOTE',
@@ -265,7 +265,12 @@ function startMapVote(io, room) {
       timeLeft:    VOTE_SECS,
       players:     gs.players.map((p) => ({ id: p.id, name: p.name, color: p.color })),
     },
-  });
+  };
+
+  io.to(room.id).emit('phase_changed', payload);
+  // Safety: ensure host receives the initial vote even if they somehow
+  // miss the room broadcast (observed first-round host-only issue).
+  if (room.host) io.to(room.host).emit('phase_changed', payload);
 
   // Countdown timer
   gs._voteCountdown = setInterval(() => {
