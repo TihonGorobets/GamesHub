@@ -1369,6 +1369,8 @@ const PTB_ARENA_H = 560;
 const PTB_PLAYER_SPEED = 200; // must mirror server PLAYER_SPEED
 const PTB_PLAYER_R = 20;
 const PTB_MAGNETIC_FORCE = 70; // must mirror server magnetic force
+const PTB_PARTICLE_LIMIT = 180;
+const PTB_CORRECTION_EPSILON = 4;
 const TICK_MS = 33; // server tick interval
 
 // Default obstacles (classic map) – will be overridden by server map data
@@ -1401,6 +1403,9 @@ const ptb = {
   _prevStateAt: 0,
   stateInterval: 33,    // ms between server snapshots (measured)
   particles:    [],     // visual particles
+  staticLayer:  null,   // cached arena background/obstacles
+  staticLayerKey: '',
+  labelWidthCache: new Map(),
   exploFlash:   0,      // 0..1 explosion flash overlay
   shakeTime:    0,      // seconds of remaining screen shake
   lastTime:     0,
@@ -1514,6 +1519,9 @@ function ptbSpawnExplosion(x, y, color) {
       drag: 0.92,
     });
   }
+  if (ptb.particles.length > PTB_PARTICLE_LIMIT) {
+    ptb.particles.splice(0, ptb.particles.length - PTB_PARTICLE_LIMIT);
+  }
   ptb.exploFlash = 0.7;
   ptb.shakeTime  = 0.4;
 }
@@ -1531,6 +1539,82 @@ function ptbSpawnTrail(p, prob) {
     size: 2 + Math.random() * 3,
     drag: 0.86,
   });
+  if (ptb.particles.length > PTB_PARTICLE_LIMIT) {
+    ptb.particles.splice(0, ptb.particles.length - PTB_PARTICLE_LIMIT);
+  }
+}
+
+function ptbGetMapCacheKey() {
+  const m = ptb.currentMap || {};
+  return JSON.stringify({
+    id: m.id || 'classic',
+    bg: m.bg || '#09090f',
+    gridColor: m.gridColor || '#8b5cf6',
+    borderColor: m.borderColor || 'rgba(99,102,241,0.4)',
+    obstacleColor: m.obstacleColor || '#0c0e1c',
+    obstacleStroke: m.obstacleStroke || 'rgba(99,102,241,0.5)',
+    obstacles: ptbGetObstacles(),
+  });
+}
+
+function ptbEnsureStaticLayer() {
+  const key = ptbGetMapCacheKey();
+  if (ptb.staticLayer && ptb.staticLayerKey === key) return ptb.staticLayer;
+
+  const layer = document.createElement('canvas');
+  layer.width = PTB_ARENA_W;
+  layer.height = PTB_ARENA_H;
+  const lctx = layer.getContext('2d', { alpha: false });
+  if (!lctx) return null;
+
+  const mapData = ptb.currentMap || {};
+  const W = PTB_ARENA_W, H = PTB_ARENA_H;
+  const obstacles = ptbGetObstacles();
+
+  lctx.fillStyle = mapData.bg || '#09090f';
+  lctx.fillRect(0, 0, W, H);
+
+  const gridSize = 40;
+  lctx.globalAlpha = 0.06;
+  lctx.strokeStyle = mapData.gridColor || '#8b5cf6';
+  lctx.lineWidth = 0.5;
+  lctx.beginPath();
+  for (let x = 0; x <= W; x += gridSize) { lctx.moveTo(x, 0); lctx.lineTo(x, H); }
+  for (let y = 0; y <= H; y += gridSize) { lctx.moveTo(0, y); lctx.lineTo(W, y); }
+  lctx.stroke();
+  lctx.globalAlpha = 1;
+
+  lctx.strokeStyle = mapData.borderColor || 'rgba(99,102,241,0.4)';
+  lctx.lineWidth = 2;
+  lctx.strokeRect(1, 1, W - 2, H - 2);
+  lctx.strokeStyle = 'rgba(239,68,68,0.1)';
+  lctx.lineWidth = 6;
+  lctx.strokeRect(1, 1, W - 2, H - 2);
+
+  for (const [bx, by, bw, bh] of obstacles) {
+    lctx.fillStyle = mapData.obstacleColor || '#0c0e1c';
+    lctx.fillRect(bx, by, bw, bh);
+    lctx.strokeStyle = mapData.obstacleStroke || 'rgba(99,102,241,0.5)';
+    lctx.lineWidth = 1.5;
+    lctx.strokeRect(bx, by, bw, bh);
+    lctx.fillStyle = 'rgba(255,255,255,0.04)';
+    lctx.fillRect(bx, by, bw, 3);
+    lctx.fillRect(bx, by, 3, bh);
+  }
+
+  ptb.staticLayer = layer;
+  ptb.staticLayerKey = key;
+  return layer;
+}
+
+function ptbMeasureLabelWidth(ctx, name, isMe) {
+  const font = isMe ? 'bold 11px "Noto Sans",sans-serif' : '10px "Noto Sans",sans-serif';
+  const key = font + '|' + name;
+  if (ptb.labelWidthCache.has(key)) return ptb.labelWidthCache.get(key);
+  ctx.font = font;
+  const width = ctx.measureText(name).width;
+  ptb.labelWidthCache.set(key, width);
+  return width;
 }
 
 // Hex → rgba helper
@@ -1642,37 +1726,13 @@ function ptbRender(dt) {
   ctx.save();
   ctx.translate(sx, sy);
 
-  // Get map visual data
-  const mapData = ptb.currentMap || {};
-  const mapBg = mapData.bg || '#09090f';
-  const mapGrid = mapData.gridColor || '#8b5cf6';
-  const mapBorder = mapData.borderColor || 'rgba(99,102,241,0.4)';
-  const mapObsColor = mapData.obstacleColor || '#0c0e1c';
-  const mapObsStroke = mapData.obstacleStroke || 'rgba(99,102,241,0.5)';
-  const obstacles = ptbGetObstacles();
-
-  // Background
-  ctx.fillStyle = mapBg;
-  ctx.fillRect(-6, -6, W + 12, H + 12);
-
-  // Animated neon grid
-  const gridSize = 40;
-  ctx.globalAlpha = 0.05 + 0.015 * Math.sin(t * 0.5);
-  ctx.strokeStyle = mapGrid;
-  ctx.lineWidth = 0.5;
-  ctx.beginPath();
-  for (let x = 0; x <= W; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
-  for (let y = 0; y <= H; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-
-  // Arena border
-  ctx.strokeStyle = mapBorder;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, W - 2, H - 2);
-  ctx.strokeStyle = 'rgba(239,68,68,0.1)';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(1, 1, W - 2, H - 2);
+  const staticLayer = ptbEnsureStaticLayer();
+  if (staticLayer) {
+    ctx.drawImage(staticLayer, 0, 0);
+  } else {
+    ctx.fillStyle = '#09090f';
+    ctx.fillRect(0, 0, W, H);
+  }
 
   // Modifier tint
   if (gs?.modifier) {
@@ -1680,19 +1740,6 @@ function ptbRender(dt) {
     ctx.globalAlpha = 0.025 + 0.018 * Math.sin(ptb.modAnim * 3);
     ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
-  }
-
-  // Obstacles
-  for (const [bx, by, bw, bh] of obstacles) {
-    ctx.fillStyle = mapObsColor;
-    ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = mapObsStroke;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(bx, by, bw, bh);
-    // Specular
-    ctx.fillStyle = 'rgba(255,255,255,0.04)';
-    ctx.fillRect(bx, by, bw, 3);
-    ctx.fillRect(bx, by, 3, bh);
   }
 
   // Particles
@@ -1851,7 +1898,7 @@ function ptbRender(dt) {
       const labelY = rp.y - R - (isBomb ? 46 : 28);
       ctx.font      = isMe ? 'bold 11px "Noto Sans",sans-serif' : '10px "Noto Sans",sans-serif';
       ctx.textAlign = 'center';
-      const tw  = ctx.measureText(p.name).width;
+      const tw  = ptbMeasureLabelWidth(ctx, p.name, isMe);
       const ph  = 14, pw = tw + 10;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ptbRoundRect(ctx, rp.x - pw / 2, labelY - ph + 3, pw, ph, 5);
@@ -2310,6 +2357,9 @@ socket.on('ptb_state', (gs) => {
         rp.y = me.y;
         rp._corrX = 0;
         rp._corrY = 0;
+      } else if (errDist <= PTB_CORRECTION_EPSILON) {
+        rp._corrX = 0;
+        rp._corrY = 0;
       } else {
         rp._corrX = errX;
         rp._corrY = errY;
@@ -2563,8 +2613,6 @@ $('btn-start-game').addEventListener('click', () => {
     if (res.error) {
       errEl.textContent = res.error;
       errEl.classList.remove('hidden');
-    } else {
-      enterGame(state.room);
     }
   });
 });
