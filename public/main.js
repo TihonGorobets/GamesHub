@@ -1416,7 +1416,6 @@ const ptb = {
   lastSent:     { dx: 0, dy: 0 },
   inputInterval: null,
   inputSeq:     0,      // monotonic input sequence number
-  inputHistory: [],
   simAcc:       0,      // local fixed-step accumulator (seconds)
   simStep:      1 / 60, // local sim step (seconds)
   lastInputChangeAt: 0,
@@ -1450,8 +1449,6 @@ function enterPassBomb(room) {
 
   // Clear interpolation cache so stale positions from last round don't bleed in
   ptb.renderPos = {};
-  ptb.inputHistory = [];
-  ptb.lastSent = { dx: 0, dy: 0 };
   ptb.simAcc = 0;
 
   // Defer fit+render so the screen has been laid out by the browser first
@@ -1659,11 +1656,15 @@ function ptbResolveCircleAABB(pos, bx, by, bw, bh, r) {
   if (pen > 0) { pos.x += (dx / d) * pen; pos.y += (dy / d) * pen; }
 }
 
-function ptbSimulateInputVector(pos, dt, gs, inputDx, inputDy) {
+function ptbPredictLocal(rp, dt, gs) {
+  // Run the same physics the server runs, so local player moves instantly
+  const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
+  const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
   const speedMult = (gs.modifier && gs.modifier.id === 'speed_surge') ? 1.7 : 1.0;
   let spd = PTB_PLAYER_SPEED * speedMult;
-  let sx = inputDx * spd;
-  let sy = inputDy * spd;
+  let sx = (dx / len) * spd;
+  let sy = (dy / len) * spd;
 
   if (gs.modifier && gs.modifier.id === 'gravity_shift') {
     sx *= 0.55;
@@ -1683,32 +1684,20 @@ function ptbSimulateInputVector(pos, dt, gs, inputDx, inputDy) {
     }
   }
 
-  pos.x += sx * dt;
-  pos.y += sy * dt;
+  rp.x += sx * dt;
+  rp.y += sy * dt;
 
   // Arena boundary
-  pos.x = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_W - PTB_PLAYER_R, pos.x));
-  pos.y = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_H - PTB_PLAYER_R, pos.y));
+  rp.x = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_W - PTB_PLAYER_R, rp.x));
+  rp.y = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_H - PTB_PLAYER_R, rp.y));
 
   // Obstacle collision
   const obstacles = ptbGetObstacles();
   for (const [bx, by, bw, bh] of obstacles) {
-    ptbResolveCircleAABB(pos, bx, by, bw, bh, PTB_PLAYER_R);
+    ptbResolveCircleAABB(rp, bx, by, bw, bh, PTB_PLAYER_R);
   }
-  pos.x = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_W - PTB_PLAYER_R, pos.x));
-  pos.y = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_H - PTB_PLAYER_R, pos.y));
-}
-
-function ptbGetCurrentInputVector() {
-  const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
-  const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  return { dx: dx / len, dy: dy / len };
-}
-
-function ptbPredictLocal(rp, dt, gs) {
-  const input = ptbGetCurrentInputVector();
-  ptbSimulateInputVector(rp, dt, gs, input.dx, input.dy);
+  rp.x = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_W - PTB_PLAYER_R, rp.x));
+  rp.y = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_H - PTB_PLAYER_R, rp.y));
 }
 
 function ptbHasMovementInput() {
@@ -1717,44 +1706,6 @@ function ptbHasMovementInput() {
 
 function ptbRecentlyChangedInput() {
   return performance.now() - (ptb.lastInputChangeAt || 0) <= PTB_INPUT_CHANGE_GRACE_MS;
-}
-
-function ptbComputeLocalPredictedPosition(gs, now = performance.now()) {
-  const rp = ptb.renderPos[socket.id];
-  if (!rp || typeof rp._baseX !== 'number' || typeof rp._baseY !== 'number') return null;
-
-  const pos = { x: rp._baseX, y: rp._baseY };
-  let cursor = rp._baseAt || now;
-  let curDx = typeof rp._ackDx === 'number' ? rp._ackDx : 0;
-  let curDy = typeof rp._ackDy === 'number' ? rp._ackDy : 0;
-  const step = ptb.simStep || (1 / 60);
-  const history = ptb.inputHistory.filter((inp) => inp.seq > (rp._baseSeq || 0));
-
-  const advance = (seconds, dx, dy) => {
-    let rem = Math.max(0, seconds);
-    let subSteps = 0;
-    while (rem >= step && subSteps < 240) {
-      ptbSimulateInputVector(pos, step, gs, dx, dy);
-      rem -= step;
-      subSteps++;
-    }
-    if (rem > 0) ptbSimulateInputVector(pos, rem, gs, dx, dy);
-  };
-
-  for (const inp of history) {
-    if (inp.at > cursor) {
-      advance((inp.at - cursor) / 1000, curDx, curDy);
-    }
-    curDx = inp.dx;
-    curDy = inp.dy;
-    cursor = Math.max(cursor, inp.at);
-  }
-
-  if (now > cursor) {
-    advance((now - cursor) / 1000, curDx, curDy);
-  }
-
-  return pos;
 }
 
 // ── Main renderer ──────────────────────────────────────────
@@ -1843,10 +1794,28 @@ function ptbRender(dt) {
       }
 
       if (isMe && gs.phase === 'PTB_PLAYING') {
-        const predicted = ptbComputeLocalPredictedPosition(gs, performance.now());
-        if (predicted) {
-          rp.x = predicted.x;
-          rp.y = predicted.y;
+        // LOCAL PLAYER: fixed-step client-side prediction for 60fps smoothness
+        // (avoids jitter from variable frame dt)
+        ptb.simAcc = Math.min(0.25, (ptb.simAcc || 0) + dt);
+        const step = ptb.simStep || (1 / 60);
+        let subSteps = 0;
+        while (ptb.simAcc >= step && subSteps < 10) {
+          ptbPredictLocal(rp, step, gs);
+          ptb.simAcc -= step;
+          subSteps++;
+        }
+
+        // Apply server correction smoothly (correction is set only when a new
+        // server snapshot arrives; we do NOT pull toward stale p.x/p.y every frame)
+        if (typeof rp._corrX === 'number' && typeof rp._corrY === 'number') {
+          const moving = ptbHasMovementInput();
+          const k = 1 - Math.exp(-dt * (moving ? 7 : 14));
+          rp.x += rp._corrX * k;
+          rp.y += rp._corrY * k;
+          rp._corrX *= (1 - k);
+          rp._corrY *= (1 - k);
+          if (Math.abs(rp._corrX) < 0.01) rp._corrX = 0;
+          if (Math.abs(rp._corrY) < 0.01) rp._corrY = 0;
         }
       } else {
         // REMOTE PLAYERS: snapshot interpolation
@@ -1870,6 +1839,14 @@ function ptbRender(dt) {
 
       let drawX = rp.x;
       let drawY = rp.y;
+      if (isMe && gs.phase === 'PTB_PLAYING' && (ptb.simAcc || 0) > 0) {
+        // Render the leftover fraction of local movement too, so direction changes
+        // don't appear to "pause" between fixed simulation steps.
+        const temp = { x: rp.x, y: rp.y };
+        ptbPredictLocal(temp, Math.min(ptb.simAcc, ptb.simStep || (1 / 60)), gs);
+        drawX = temp.x;
+        drawY = temp.y;
+      }
 
       const isBomb  = p.hasBomb;
       const pulse   = 0.5 + 0.5 * Math.sin(t * 7);
@@ -1968,9 +1945,11 @@ function ptbRender(dt) {
 function ptbInitInput() {
   const sendInput = (force) => {
     if (!ptb.state || ptb.state.phase !== 'PTB_PLAYING') return;
-    const input = ptbGetCurrentInputVector();
-    const ndx = input.dx;
-    const ndy = input.dy;
+    const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
+    const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const ndx = dx / len;
+    const ndy = dy / len;
     if (!force && Math.abs(ndx - ptb.lastSent.dx) < 0.001 && Math.abs(ndy - ptb.lastSent.dy) < 0.001) return;
     const changedDir = Math.abs(ndx - ptb.lastSent.dx) >= 0.001 || Math.abs(ndy - ptb.lastSent.dy) >= 0.001;
     ptb.lastSent.dx = ndx;
@@ -1984,8 +1963,6 @@ function ptbInitInput() {
       }
     }
     ptb.inputSeq++;
-    ptb.inputHistory.push({ seq: ptb.inputSeq, dx: ndx, dy: ndy, at: performance.now() });
-    if (ptb.inputHistory.length > 80) ptb.inputHistory.splice(0, ptb.inputHistory.length - 80);
     socket.emit('ptb_input', { dx: ndx, dy: ndy, seq: ptb.inputSeq });
   };
 
@@ -2279,8 +2256,6 @@ socket.on('phase_changed', ({ phase, data }) => {
       $('ptb-overlay-gameover').classList.add('hidden');
       // Fresh round: clear render position cache so no stale/NaN entries persist
       ptb.renderPos = {};
-      ptb.inputHistory = [];
-      ptb.lastSent = { dx: 0, dy: 0 };
       ptb.simAcc = 0;
       ptbShowCountdown(data.countdownLeft);
     }
@@ -2397,6 +2372,9 @@ socket.on('ptb_state', (gs) => {
   ptb._prevStateAt = ptb.lastStateAt;
   ptbUpdateHUD(gs);
 
+  // Local reconciliation: when a new snapshot arrives, compute correction
+  // once and let the render loop apply it smoothly. This prevents the classic
+  // "rubber-band" stutter from correcting against stale server positions every frame.
   try {
     const me = gs?.players?.find((p) => p.id === socket.id);
     if (me && typeof me.x === 'number' && typeof me.y === 'number') {
@@ -2404,20 +2382,41 @@ socket.on('ptb_state', (gs) => {
       if (!rp || isNaN(rp.x) || isNaN(rp.y)) {
         ptb.renderPos[me.id] = rp = { x: me.x, y: me.y, prevX: me.x, prevY: me.y };
       }
-      let ackDx = 0, ackDy = 0;
-      for (const inp of ptb.inputHistory) {
-        if (inp.seq <= me.seq) {
-          ackDx = inp.dx;
-          ackDy = inp.dy;
+      const errX = me.x - rp.x;
+      const errY = me.y - rp.y;
+      const errDist = Math.sqrt(errX * errX + errY * errY);
+      const moving = ptbHasMovementInput();
+      const justChangedInput = ptbRecentlyChangedInput();
+      if (errDist > PTB_HARD_SNAP_DIST) {
+        rp.x = me.x;
+        rp.y = me.y;
+        rp._corrX = 0;
+        rp._corrY = 0;
+      } else if (errDist <= PTB_CORRECTION_EPSILON) {
+        rp._corrX = 0;
+        rp._corrY = 0;
+      } else if (moving && justChangedInput && errDist <= 28) {
+        rp._corrX = 0;
+        rp._corrY = 0;
+      } else if (moving && errDist <= PTB_MOVING_CORRECTION_DEADZONE) {
+        // While actively moving, ignore small-to-medium drift. This avoids the
+        // visible jitter caused by constantly dragging the predicted position
+        // toward slightly older server snapshots.
+        rp._corrX = 0;
+        rp._corrY = 0;
+      } else {
+        // Outside the deadzone, correct only the portion beyond it while moving.
+        // This preserves smoothness but still reins in larger desync.
+        if (moving) {
+          const excess = Math.max(0, errDist - PTB_MOVING_CORRECTION_DEADZONE);
+          const scale = excess / errDist;
+          rp._corrX = errX * scale;
+          rp._corrY = errY * scale;
+        } else {
+          rp._corrX = errX;
+          rp._corrY = errY;
         }
       }
-      rp._baseX = me.x;
-      rp._baseY = me.y;
-      rp._baseAt = ptb.lastStateAt;
-      rp._baseSeq = me.seq || 0;
-      rp._ackDx = ackDx;
-      rp._ackDy = ackDy;
-      ptb.inputHistory = ptb.inputHistory.filter((inp) => inp.seq > (me.seq || 0));
     }
   } catch (_) {}
 });
