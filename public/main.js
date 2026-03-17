@@ -1368,9 +1368,10 @@ const PTB_ARENA_W = 800;
 const PTB_ARENA_H = 560;
 const PTB_PLAYER_SPEED = 200; // must mirror server PLAYER_SPEED
 const PTB_PLAYER_R = 20;
+const TICK_MS = 33; // server tick interval
 
-// Mirror of server obstacle list
-const PTB_OBSTACLES = [
+// Default obstacles (classic map) – will be overridden by server map data
+const PTB_DEFAULT_OBSTACLES = [
   [  40,  30, 80, 80 ],
   [ 680,  30, 80, 80 ],
   [  40, 450, 80, 80 ],
@@ -1381,14 +1382,23 @@ const PTB_OBSTACLES = [
   [ 646, 260,  34, 80 ],
 ];
 
+/** Get the current map obstacles, falling back to defaults */
+function ptbGetObstacles() {
+  return (ptb.currentMap && ptb.currentMap.obstacles) || PTB_DEFAULT_OBSTACLES;
+}
+
 const ptb = {
   canvas:       null,
   ctx:          null,
   raf:          null,
   fitBound:     false,
   state:        null,   // latest server state snapshot
+  prevState:    null,   // previous server state (for interpolation)
+  currentMap:   null,   // current map definition (from server)
   renderPos:    {},     // playerId -> { x, y } interpolated render positions
   lastStateAt:  0,      // performance.now() timestamp of last ptb_state snapshot
+  _prevStateAt: 0,
+  stateInterval: 33,    // ms between server snapshots (measured)
   particles:    [],     // visual particles
   exploFlash:   0,      // 0..1 explosion flash overlay
   shakeTime:    0,      // seconds of remaining screen shake
@@ -1396,7 +1406,9 @@ const ptb = {
   keys:         { up: false, down: false, left: false, right: false },
   lastSent:     { dx: 0, dy: 0 },
   inputInterval: null,
+  inputSeq:     0,      // monotonic input sequence number
   modAnim:      0,
+  _voteSelected: null,
 };
 
 // ── Enter screen ───────────────────────────────────────────
@@ -1420,6 +1432,7 @@ function enterPassBomb(room) {
   // Reset overlays
   $('ptb-overlay-countdown').classList.add('hidden');
   $('ptb-overlay-gameover').classList.add('hidden');
+  $('ptb-overlay-mapvote').classList.add('hidden');
   $('ptb-modifier-banner').classList.add('hidden');
 
   // Clear interpolation cache so stale positions from last round don't bleed in
@@ -1574,7 +1587,8 @@ function ptbPredictLocal(rp, dt, gs) {
   rp.y = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_H - PTB_PLAYER_R, rp.y));
 
   // Obstacle collision
-  for (const [bx, by, bw, bh] of PTB_OBSTACLES) {
+  const obstacles = ptbGetObstacles();
+  for (const [bx, by, bw, bh] of obstacles) {
     ptbResolveCircleAABB(rp, bx, by, bw, bh, PTB_PLAYER_R);
   }
   rp.x = Math.max(PTB_PLAYER_R, Math.min(PTB_ARENA_W - PTB_PLAYER_R, rp.x));
@@ -1611,14 +1625,23 @@ function ptbRender(dt) {
   ctx.save();
   ctx.translate(sx, sy);
 
+  // Get map visual data
+  const mapData = ptb.currentMap || {};
+  const mapBg = mapData.bg || '#09090f';
+  const mapGrid = mapData.gridColor || '#8b5cf6';
+  const mapBorder = mapData.borderColor || 'rgba(99,102,241,0.4)';
+  const mapObsColor = mapData.obstacleColor || '#0c0e1c';
+  const mapObsStroke = mapData.obstacleStroke || 'rgba(99,102,241,0.5)';
+  const obstacles = ptbGetObstacles();
+
   // Background
-  ctx.fillStyle = '#09090f';
+  ctx.fillStyle = mapBg;
   ctx.fillRect(-6, -6, W + 12, H + 12);
 
   // Animated neon grid
   const gridSize = 40;
   ctx.globalAlpha = 0.05 + 0.015 * Math.sin(t * 0.5);
-  ctx.strokeStyle = '#8b5cf6';
+  ctx.strokeStyle = mapGrid;
   ctx.lineWidth = 0.5;
   ctx.beginPath();
   for (let x = 0; x <= W; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
@@ -1627,7 +1650,7 @@ function ptbRender(dt) {
   ctx.globalAlpha = 1;
 
   // Arena border
-  ctx.strokeStyle = 'rgba(99,102,241,0.4)';
+  ctx.strokeStyle = mapBorder;
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, W - 2, H - 2);
   ctx.strokeStyle = 'rgba(239,68,68,0.1)';
@@ -1643,10 +1666,10 @@ function ptbRender(dt) {
   }
 
   // Obstacles
-  for (const [bx, by, bw, bh] of PTB_OBSTACLES) {
-    ctx.fillStyle = '#0c0e1c';
+  for (const [bx, by, bw, bh] of obstacles) {
+    ctx.fillStyle = mapObsColor;
     ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = 'rgba(99,102,241,0.5)';
+    ctx.strokeStyle = mapObsStroke;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(bx, by, bw, bh);
     // Specular
@@ -1669,12 +1692,9 @@ function ptbRender(dt) {
   // Players
   if (gs?.players) {
     const R = 20;
-    // Exponential lerp factor for remote players
-    const lerpKRemote = 1 - Math.exp(-dt * 28);
 
     // Dead ghosts (behind living)
     for (const p of gs.players.filter((pp) => !pp.alive)) {
-      // Snap dead players immediately — no need to interpolate corpses
       const rp = ptb.renderPos[p.id] || { x: p.x, y: p.y };
       ptb.renderPos[p.id] = rp;
       ctx.globalAlpha = 0.12;
@@ -1687,22 +1707,45 @@ function ptbRender(dt) {
 
     // Living players
     for (const p of gs.players.filter((pp) => pp.alive)) {
-      const isMe    = p.id === socket.id;
-      // Interpolate position client-side so server ticks look smooth at 60fps
+      const isMe = p.id === socket.id;
       let rp = ptb.renderPos[p.id];
       if (!rp) {
-        ptb.renderPos[p.id] = rp = { x: p.x, y: p.y };
-      } else if (isMe && gs.phase === 'PTB_PLAYING') {
-        // LOCAL PLAYER: run client-side prediction for instant response,
-        // then gently reconcile toward authoritative server position.
+        ptb.renderPos[p.id] = rp = { x: p.x, y: p.y, prevX: p.x, prevY: p.y };
+      }
+
+      if (isMe && gs.phase === 'PTB_PLAYING') {
+        // LOCAL PLAYER: client-side prediction for instant response
         ptbPredictLocal(rp, dt, gs);
-        const reconcile = 1 - Math.exp(-dt * 12);
-        rp.x += (p.x - rp.x) * reconcile;
-        rp.y += (p.y - rp.y) * reconcile;
+        // Smooth reconciliation toward server position (gentle pull)
+        const errX = p.x - rp.x, errY = p.y - rp.y;
+        const errDist = Math.sqrt(errX * errX + errY * errY);
+        if (errDist > 100) {
+          // Teleport if too far (e.g. respawn)
+          rp.x = p.x; rp.y = p.y;
+        } else if (errDist > 0.5) {
+          // Smooth blend: faster when error is large, gentler when small
+          const blend = 1 - Math.exp(-dt * (6 + errDist * 0.1));
+          rp.x += errX * blend;
+          rp.y += errY * blend;
+        }
       } else {
-        // REMOTE PLAYERS: smooth interpolation
-        rp.x += (p.x - rp.x) * lerpKRemote;
-        rp.y += (p.y - rp.y) * lerpKRemote;
+        // REMOTE PLAYERS: snapshot interpolation
+        // Track previous and target positions for smooth interpolation
+        if (rp._targetX === undefined || rp._targetX !== p.x || rp._targetY !== p.y) {
+          // New server snapshot arrived – shift target
+          rp.prevX = rp._targetX !== undefined ? rp._targetX : rp.x;
+          rp.prevY = rp._targetY !== undefined ? rp._targetY : rp.y;
+          rp._targetX = p.x;
+          rp._targetY = p.y;
+          rp._interpT = 0;
+        }
+        // Advance interpolation timer
+        const interpDuration = ptb.stateInterval / 1000 || 0.033;
+        rp._interpT = Math.min(1, (rp._interpT || 0) + dt / interpDuration);
+        // Smooth step for extra smoothness
+        const t2 = rp._interpT * rp._interpT * (3 - 2 * rp._interpT);
+        rp.x = rp.prevX + (rp._targetX - rp.prevX) * t2;
+        rp.y = rp.prevY + (rp._targetY - rp.prevY) * t2;
       }
 
       const isBomb  = p.hasBomb;
@@ -1800,34 +1843,36 @@ function ptbRender(dt) {
 
 // ── Input ──────────────────────────────────────────────────
 function ptbInitInput() {
-  const sendNow = () => {
+  const sendInput = (force) => {
     if (!ptb.state || ptb.state.phase !== 'PTB_PLAYING') return;
     const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
     const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
     const len = Math.sqrt(dx*dx + dy*dy) || 1;
     const ndx = dx / len;
     const ndy = dy / len;
-    // Only emit when input vector changes (cuts spam while improving responsiveness)
-    if (Math.abs(ndx - ptb.lastSent.dx) < 0.001 && Math.abs(ndy - ptb.lastSent.dy) < 0.001) return;
+    if (!force && Math.abs(ndx - ptb.lastSent.dx) < 0.001 && Math.abs(ndy - ptb.lastSent.dy) < 0.001) return;
     ptb.lastSent.dx = ndx;
     ptb.lastSent.dy = ndy;
-    socket.emit('ptb_input', { dx: ndx, dy: ndy });
+    ptb.inputSeq++;
+    socket.emit('ptb_input', { dx: ndx, dy: ndy, seq: ptb.inputSeq });
   };
 
   document.addEventListener('keydown', (e) => {
     if (!$('screen-pass-bomb').classList.contains('active')) return;
-    if (e.key==='ArrowUp'    || e.key==='w' || e.key==='W') ptb.keys.up    = true;
-    if (e.key==='ArrowDown'  || e.key==='s' || e.key==='S') ptb.keys.down  = true;
-    if (e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') ptb.keys.left  = true;
-    if (e.key==='ArrowRight' || e.key==='d' || e.key==='D') ptb.keys.right = true;
-    sendNow();
+    let changed = false;
+    if ((e.key==='ArrowUp'    || e.key==='w' || e.key==='W') && !ptb.keys.up)    { ptb.keys.up    = true; changed = true; }
+    if ((e.key==='ArrowDown'  || e.key==='s' || e.key==='S') && !ptb.keys.down)  { ptb.keys.down  = true; changed = true; }
+    if ((e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') && !ptb.keys.left)  { ptb.keys.left  = true; changed = true; }
+    if ((e.key==='ArrowRight' || e.key==='d' || e.key==='D') && !ptb.keys.right) { ptb.keys.right = true; changed = true; }
+    if (changed) sendInput(true);
   });
   document.addEventListener('keyup', (e) => {
-    if (e.key==='ArrowUp'    || e.key==='w' || e.key==='W') ptb.keys.up    = false;
-    if (e.key==='ArrowDown'  || e.key==='s' || e.key==='S') ptb.keys.down  = false;
-    if (e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') ptb.keys.left  = false;
-    if (e.key==='ArrowRight' || e.key==='d' || e.key==='D') ptb.keys.right = false;
-    sendNow();
+    let changed = false;
+    if ((e.key==='ArrowUp'    || e.key==='w' || e.key==='W') && ptb.keys.up)    { ptb.keys.up    = false; changed = true; }
+    if ((e.key==='ArrowDown'  || e.key==='s' || e.key==='S') && ptb.keys.down)  { ptb.keys.down  = false; changed = true; }
+    if ((e.key==='ArrowLeft'  || e.key==='a' || e.key==='A') && ptb.keys.left)  { ptb.keys.left  = false; changed = true; }
+    if ((e.key==='ArrowRight' || e.key==='d' || e.key==='D') && ptb.keys.right) { ptb.keys.right = false; changed = true; }
+    if (changed) sendInput(true);
   });
 
   // Touch/swipe for mobile
@@ -1839,25 +1884,18 @@ function ptbInitInput() {
       const dx = e.touches[0].clientX - tx0, dy = e.touches[0].clientY - ty0;
       ptb.keys.left  = dx < -10; ptb.keys.right = dx > 10;
       ptb.keys.up    = dy < -10; ptb.keys.down  = dy > 10;
-      sendNow();
+      sendInput(true);
     }, { passive: true });
     c.addEventListener('touchend', () => {
       ptb.keys.left=ptb.keys.right=ptb.keys.up=ptb.keys.down=false;
-      sendNow();
+      sendInput(true);
     }, { passive: true });
   }
 
-  // Keepalive: re-send at higher rate while playing (reduces perceived input lag)
+  // Keepalive: resend at server tick rate
   ptb.inputInterval = setInterval(() => {
-    if (!ptb.state || ptb.state.phase !== 'PTB_PLAYING') return;
-    const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
-    const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
-    const len = Math.sqrt(dx*dx + dy*dy) || 1;
-    const ndx = dx/len, ndy = dy/len;
-    ptb.lastSent.dx = ndx;
-    ptb.lastSent.dy = ndy;
-    socket.emit('ptb_input', { dx: ndx, dy: ndy });
-  }, 33);
+    sendInput(false);
+  }, TICK_MS);
 }
 
 // ── HUD updates ────────────────────────────────────────────
@@ -1920,6 +1958,121 @@ function ptbShowCountdown(n) {
   }
 }
 
+// ── Map vote UI ────────────────────────────────────────────
+function ptbShowMapVote(data) {
+  const ov = $('ptb-overlay-mapvote');
+  if (!ov) return;
+  ov.classList.remove('hidden');
+  $('ptb-vote-time').textContent = data.timeLeft || VOTE_SECS;
+  const footer = $('ptb-vote-footer');
+  if (footer) footer.innerHTML = '<span style="opacity:.5">Click a map to vote</span>';
+
+  const container = $('ptb-vote-cards');
+  if (!container) return;
+  container.innerHTML = '';
+
+  ptb._voteSelected = null;
+
+  (data.maps || []).forEach((map) => {
+    const card = document.createElement('div');
+    card.className = 'ptb-vote-card';
+    card.dataset.mapId = map.id;
+
+    // Mini preview canvas
+    const preview = document.createElement('div');
+    preview.className = 'ptb-vote-card-preview';
+    const cvs = document.createElement('canvas');
+    cvs.width = 400; cvs.height = 280;
+    preview.appendChild(cvs);
+    ptbDrawMapPreview(cvs, map);
+
+    card.innerHTML = '';
+    card.appendChild(preview);
+
+    const icon = document.createElement('div');
+    icon.className = 'ptb-vote-card-icon';
+    icon.textContent = map.icon;
+    card.appendChild(icon);
+
+    const name = document.createElement('div');
+    name.className = 'ptb-vote-card-name';
+    name.textContent = map.name;
+    card.appendChild(name);
+
+    const desc = document.createElement('div');
+    desc.className = 'ptb-vote-card-desc';
+    desc.textContent = map.desc;
+    card.appendChild(desc);
+
+    const votes = document.createElement('div');
+    votes.className = 'ptb-vote-card-votes';
+    votes.innerHTML = `<span class="ptb-vote-count" data-count-for="${map.id}">0</span> <span style="opacity:.5;font-size:.75rem">votes</span>`;
+    card.appendChild(votes);
+
+    const bar = document.createElement('div');
+    bar.className = 'ptb-vote-bar';
+    bar.innerHTML = `<div class="ptb-vote-bar-fill" data-bar-for="${map.id}"></div>`;
+    card.appendChild(bar);
+
+    card.addEventListener('click', () => {
+      // Select this card
+      container.querySelectorAll('.ptb-vote-card').forEach((c) => c.classList.remove('selected'));
+      card.classList.add('selected');
+      ptb._voteSelected = map.id;
+      socket.emit('ptb_vote', { mapId: map.id });
+    });
+
+    container.appendChild(card);
+  });
+}
+
+function ptbDrawMapPreview(cvs, map) {
+  const ctx = cvs.getContext('2d');
+  const W = cvs.width, H = cvs.height;
+  const sx = W / 800, sy = H / 560;
+
+  // Background
+  ctx.fillStyle = map.bg || '#09090f';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = map.gridColor || '#8b5cf6';
+  ctx.globalAlpha = 0.08;
+  ctx.lineWidth = 0.5;
+  const gs = 40;
+  ctx.beginPath();
+  for (let x = 0; x <= 800; x += gs) { ctx.moveTo(x * sx, 0); ctx.lineTo(x * sx, H); }
+  for (let y = 0; y <= 560; y += gs) { ctx.moveTo(0, y * sy); ctx.lineTo(W, y * sy); }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Border
+  ctx.strokeStyle = map.borderColor || 'rgba(99,102,241,0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(1, 1, W - 2, H - 2);
+
+  // Obstacles
+  for (const [bx, by, bw, bh] of (map.obstacles || [])) {
+    ctx.fillStyle = map.obstacleColor || '#0c0e1c';
+    ctx.fillRect(bx * sx, by * sy, bw * sx, bh * sy);
+    ctx.strokeStyle = map.obstacleStroke || 'rgba(99,102,241,0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx * sx, by * sy, bw * sx, bh * sy);
+  }
+}
+
+function ptbUpdateVoteCounts(votes, voterMap) {
+  const total = Object.values(votes).reduce((s, n) => s + n, 0) || 1;
+  for (const [mapId, count] of Object.entries(votes)) {
+    const el = document.querySelector(`[data-count-for="${mapId}"]`);
+    if (el) el.textContent = count;
+    const bar = document.querySelector(`[data-bar-for="${mapId}"]`);
+    if (bar) bar.style.width = Math.round((count / total) * 100) + '%';
+  }
+}
+
+const VOTE_SECS = 10;
+
 // ── Game-over screen ───────────────────────────────────────
 function showPTBGameOver(data) {
   $('ptb-overlay-gameover').classList.remove('hidden');
@@ -1975,16 +2128,26 @@ socket.on('phase_changed', ({ phase, data }) => {
       enterPassBomb(state.room || { id: '----', players: [] });
     }
     if (data.players && state.room) state.room.players = data.players;
+    // Store map data when server sends it
+    if (data.map) ptb.currentMap = data.map;
+    if (data.mapId && !data.map) ptb.currentMap = ptb.currentMap || null;
     ptb.state = data;
     ptbUpdateHUD(data);
 
+    if (phase === 'PTB_MAP_VOTE') {
+      $('ptb-overlay-gameover').classList.add('hidden');
+      $('ptb-overlay-countdown').classList.add('hidden');
+      ptbShowMapVote(data);
+    }
     if (phase === 'PTB_COUNTDOWN') {
+      $('ptb-overlay-mapvote').classList.add('hidden');
       $('ptb-overlay-gameover').classList.add('hidden');
       ptbShowCountdown(data.countdownLeft);
     }
     if (phase === 'PTB_PLAYING') {
       $('ptb-overlay-countdown').classList.add('hidden');
       $('ptb-overlay-gameover').classList.add('hidden');
+      $('ptb-overlay-mapvote').classList.add('hidden');
     }
     if (phase === 'PTB_GAME_OVER') {
       showPTBGameOver(data);
@@ -2083,9 +2246,39 @@ socket.on('dd_hint', ({ hint }) => {
 // ── Pass the Bomb socket events ─────────────────────────────────
 
 socket.on('ptb_state', (gs) => {
+  // Store server snapshot with timestamp
+  if (gs.mapId && !ptb.currentMap) {
+    // If we missed the map phase, at least note the ID
+  }
+  ptb.prevState = ptb.state;
   ptb.state = gs;
   ptb.lastStateAt = performance.now();
+  ptb.stateInterval = ptb.prevState ? (ptb.lastStateAt - (ptb._prevStateAt || ptb.lastStateAt)) : TICK_MS;
+  ptb._prevStateAt = ptb.lastStateAt;
   ptbUpdateHUD(gs);
+});
+
+// Map voting events
+socket.on('ptb_vote_tick', ({ timeLeft }) => {
+  const el = $('ptb-vote-time');
+  if (el) el.textContent = timeLeft;
+  const tw = el?.parentElement;
+  if (tw) tw.classList.toggle('urgent', timeLeft <= 3);
+});
+
+socket.on('ptb_vote_update', ({ votes, voterMap }) => {
+  ptbUpdateVoteCounts(votes, voterMap);
+});
+
+socket.on('ptb_vote_result', ({ mapId, mapName, mapIcon }) => {
+  const footer = $('ptb-vote-footer');
+  if (footer) {
+    footer.innerHTML = `<span class="ptb-vote-result-text">${mapIcon} ${mapName} selected!</span>`;
+  }
+  // Disable card clicks
+  document.querySelectorAll('.ptb-vote-card').forEach((c) => {
+    c.style.pointerEvents = 'none';
+  });
 });
 
 socket.on('ptb_countdown', ({ count }) => {

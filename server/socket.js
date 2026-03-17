@@ -13,6 +13,7 @@ const GAME_EVENTS = [
   'dd_choose_word', 'dd_draw', 'dd_chat',
   // Pass the Bomb
   'ptb_input',
+  'ptb_vote',
   // Shared
   'restart_game',
 ];
