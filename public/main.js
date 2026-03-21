@@ -2171,7 +2171,6 @@ function ptbRender(dt) {
   }
 
   ctx.restore();
-}
 
 // ── Input ──────────────────────────────────────────────────
 function ptbInitInput() {
