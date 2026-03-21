@@ -16,6 +16,7 @@ const ARENA_W         = 800;
 const ARENA_H         = 560;
 const PLAYER_R        = 20;        // collision radius
 const PLAYER_SPEED    = 200;       // px/s base speed
+const BOMB_HOLDER_SPEED_MULT = 1.22; // bomb holder is 22% faster so they can catch others
 const TICK_MS         = 33;        // ~30 fps server tick
 const PHYS_DT         = TICK_MS / 1000; // fixed physics timestep
 const BOMB_MIN        = 20;        // seconds
@@ -552,7 +553,8 @@ function gameTick(io, room) {
 
   // ── Move players ────────────────────────────────────────
   for (const p of alive) {
-    const spd = PLAYER_SPEED * speedMult;
+    const holderBoost = (p.hasBomb) ? BOMB_HOLDER_SPEED_MULT : 1.0;
+    const spd = PLAYER_SPEED * speedMult * holderBoost;
     let sx = p.inputDx * spd;
     let sy = p.inputDy * spd;
 
