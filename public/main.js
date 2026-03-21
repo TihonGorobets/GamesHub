@@ -1444,11 +1444,13 @@ function ptbLoadSprites() {
   ptb.sprites._loaded = true;
   const load = (key, url) => {
     const img = new Image();
-    img.onload  = () => { ptb.sprites[key] = img; };
+    // Invalidate static layer cache so tile floors/walls re-render once image loads
+    img.onload  = () => { ptb.sprites[key] = img; ptb.staticLayer = null; };
     img.onerror = () => console.warn('[PTB] sprite failed:', url);
     img.src = url;
   };
   load('dungeon', '/assets/sprites/dungeon.png');
+  load('town',    '/assets/sprites/town.png');
   load('fire',    '/assets/particles/fire_01.png');
   load('fire2',   '/assets/particles/fire_02.png');
   load('flame',   '/assets/particles/flame_01.png');
@@ -1612,6 +1614,36 @@ function ptbGetMapCacheKey() {
   });
 }
 
+// ── Tile rendering helpers ──────────────────────────────────────────────────
+// Fill entire canvas region by tiling a 16×16 spritesheet tile
+function ptbTileFloor(ctx, img, sx, sy, W, H, tileSize) {
+  if (!img) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  for (let ty = 0; ty < H; ty += tileSize) {
+    for (let tx = 0; tx < W; tx += tileSize) {
+      ctx.drawImage(img, sx, sy, 16, 16, tx, ty, tileSize, tileSize);
+    }
+  }
+  ctx.restore();
+}
+
+// Tile a spritesheet tile inside a clipped rectangle (for obstacles/walls)
+function ptbTileRect(ctx, img, sx, sy, dx, dy, dw, dh, tileSize) {
+  if (!img) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.beginPath();
+  ctx.rect(dx, dy, dw, dh);
+  ctx.clip();
+  for (let ty = dy; ty < dy + dh; ty += tileSize) {
+    for (let tx = dx; tx < dx + dw; tx += tileSize) {
+      ctx.drawImage(img, sx, sy, 16, 16, tx, ty, tileSize, tileSize);
+    }
+  }
+  ctx.restore();
+}
+
 function ptbEnsureStaticLayer() {
   const key = ptbGetMapCacheKey();
   if (ptb.staticLayer && ptb.staticLayerKey === key) return ptb.staticLayer;
@@ -1622,42 +1654,75 @@ function ptbEnsureStaticLayer() {
   const lctx = layer.getContext('2d', { alpha: false });
   if (!lctx) return null;
 
-  const mapData = ptb.currentMap || {};
-  const W = PTB_ARENA_W, H = PTB_ARENA_H;
+  const mapData  = ptb.currentMap || {};
+  const W        = PTB_ARENA_W, H = PTB_ARENA_H;
   const obstacles = ptbGetObstacles();
+  const TILE_SIZE = 32; // render 16px sprites at 2× for crisp pixel-art
 
+  const tileImg = mapData.tileset ? ptb.sprites[mapData.tileset] : null;
+
+  // ── Background / floor ───────────────────────────────────────────────────
   lctx.fillStyle = mapData.bg || '#09090f';
   lctx.fillRect(0, 0, W, H);
 
-  const gridSize = 40;
-  lctx.globalAlpha = 0.06;
+  if (tileImg && mapData.floorTile) {
+    const [fr, fc] = mapData.floorTile;
+    ptbTileFloor(lctx, tileImg, fc * 16, fr * 16, W, H, TILE_SIZE);
+    // Tint-darken overlay so the map colour theme is still visible
+    lctx.fillStyle = mapData.bg || '#09090f';
+    lctx.globalAlpha = 0.38;
+    lctx.fillRect(0, 0, W, H);
+    lctx.globalAlpha = 1;
+  }
+
+  // ── Grid overlay ─────────────────────────────────────────────────────────
+  lctx.globalAlpha = tileImg ? 0.04 : 0.06;
   lctx.strokeStyle = mapData.gridColor || '#8b5cf6';
   lctx.lineWidth = 0.5;
   lctx.beginPath();
+  const gridSize = 40;
   for (let x = 0; x <= W; x += gridSize) { lctx.moveTo(x, 0); lctx.lineTo(x, H); }
   for (let y = 0; y <= H; y += gridSize) { lctx.moveTo(0, y); lctx.lineTo(W, y); }
   lctx.stroke();
   lctx.globalAlpha = 1;
 
+  // ── Arena border ─────────────────────────────────────────────────────────
   lctx.strokeStyle = mapData.borderColor || 'rgba(99,102,241,0.4)';
   lctx.lineWidth = 2;
   lctx.strokeRect(1, 1, W - 2, H - 2);
-  lctx.strokeStyle = 'rgba(239,68,68,0.1)';
+  lctx.strokeStyle = 'rgba(239,68,68,0.08)';
   lctx.lineWidth = 6;
   lctx.strokeRect(1, 1, W - 2, H - 2);
 
+  // ── Obstacles ────────────────────────────────────────────────────────────
   for (const [bx, by, bw, bh] of obstacles) {
-    lctx.fillStyle = mapData.obstacleColor || '#0c0e1c';
-    lctx.fillRect(bx, by, bw, bh);
+    if (tileImg && mapData.wallTile) {
+      const [wr, wc] = mapData.wallTile;
+      ptbTileRect(lctx, tileImg, wc * 16, wr * 16, bx, by, bw, bh, TILE_SIZE);
+      // Overlay the map bg colour lightly to unify colour theme
+      lctx.fillStyle = mapData.bg || '#09090f';
+      lctx.globalAlpha = 0.22;
+      lctx.fillRect(bx, by, bw, bh);
+      lctx.globalAlpha = 1;
+    } else {
+      lctx.fillStyle = mapData.obstacleColor || '#0c0e1c';
+      lctx.fillRect(bx, by, bw, bh);
+    }
+    // Outline
     lctx.strokeStyle = mapData.obstacleStroke || 'rgba(99,102,241,0.5)';
-    lctx.lineWidth = 1.5;
+    lctx.lineWidth   = 1.5;
     lctx.strokeRect(bx, by, bw, bh);
-    lctx.fillStyle = 'rgba(255,255,255,0.04)';
-    lctx.fillRect(bx, by, bw, 3);
-    lctx.fillRect(bx, by, 3, bh);
+    // Top/left highlight bevel
+    lctx.fillStyle   = 'rgba(255,255,255,0.09)';
+    lctx.fillRect(bx, by, bw, 2);
+    lctx.fillRect(bx, by, 2, bh);
+    // Bottom/right shadow bevel
+    lctx.fillStyle   = 'rgba(0,0,0,0.28)';
+    lctx.fillRect(bx, by + bh - 2, bw, 2);
+    lctx.fillRect(bx + bw - 2, by, 2, bh);
   }
 
-  ptb.staticLayer = layer;
+  ptb.staticLayer    = layer;
   ptb.staticLayerKey = key;
   return layer;
 }
@@ -2255,20 +2320,43 @@ function ptbShowMapVote(data) {
 function ptbDrawMapPreview(cvs, map) {
   const ctx = cvs.getContext('2d');
   const W = cvs.width, H = cvs.height;
-  const sx = W / 800, sy = H / 560;
+  const scaleX = W / 800, scaleY = H / 560;
+
+  // Tile size scaled to preview canvas
+  const TILE_SRC = 16;
+  const TILE_DST = Math.round(32 * Math.min(scaleX, scaleY));
+
+  const tileImg = map.tileset ? ptb.sprites[map.tileset] : null;
 
   // Background
   ctx.fillStyle = map.bg || '#09090f';
   ctx.fillRect(0, 0, W, H);
 
+  // Tiled floor
+  if (tileImg && map.floorTile) {
+    const [fr, fc] = map.floorTile;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    for (let ty = 0; ty < H; ty += TILE_DST) {
+      for (let tx = 0; tx < W; tx += TILE_DST) {
+        ctx.drawImage(tileImg, fc * TILE_SRC, fr * TILE_SRC, TILE_SRC, TILE_SRC, tx, ty, TILE_DST, TILE_DST);
+      }
+    }
+    ctx.restore();
+    ctx.fillStyle = map.bg || '#09090f';
+    ctx.globalAlpha = 0.42;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
   // Grid
   ctx.strokeStyle = map.gridColor || '#8b5cf6';
-  ctx.globalAlpha = 0.08;
+  ctx.globalAlpha = tileImg ? 0.05 : 0.08;
   ctx.lineWidth = 0.5;
   const gs = 40;
   ctx.beginPath();
-  for (let x = 0; x <= 800; x += gs) { ctx.moveTo(x * sx, 0); ctx.lineTo(x * sx, H); }
-  for (let y = 0; y <= 560; y += gs) { ctx.moveTo(0, y * sy); ctx.lineTo(W, y * sy); }
+  for (let x = 0; x <= 800; x += gs) { ctx.moveTo(x * scaleX, 0); ctx.lineTo(x * scaleX, H); }
+  for (let y = 0; y <= 560; y += gs) { ctx.moveTo(0, y * scaleY); ctx.lineTo(W, y * scaleY); }
   ctx.stroke();
   ctx.globalAlpha = 1;
 
@@ -2279,11 +2367,29 @@ function ptbDrawMapPreview(cvs, map) {
 
   // Obstacles
   for (const [bx, by, bw, bh] of (map.obstacles || [])) {
-    ctx.fillStyle = map.obstacleColor || '#0c0e1c';
-    ctx.fillRect(bx * sx, by * sy, bw * sx, bh * sy);
+    const dx = bx * scaleX, dy = by * scaleY, dw = bw * scaleX, dh = bh * scaleY;
+    if (tileImg && map.wallTile) {
+      const [wr, wc] = map.wallTile;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.beginPath(); ctx.rect(dx, dy, dw, dh); ctx.clip();
+      for (let ty = dy; ty < dy + dh; ty += TILE_DST) {
+        for (let tx = dx; tx < dx + dw; tx += TILE_DST) {
+          ctx.drawImage(tileImg, wc * TILE_SRC, wr * TILE_SRC, TILE_SRC, TILE_SRC, tx, ty, TILE_DST, TILE_DST);
+        }
+      }
+      ctx.restore();
+      ctx.fillStyle = map.bg || '#09090f';
+      ctx.globalAlpha = 0.22;
+      ctx.fillRect(dx, dy, dw, dh);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = map.obstacleColor || '#0c0e1c';
+      ctx.fillRect(dx, dy, dw, dh);
+    }
     ctx.strokeStyle = map.obstacleStroke || 'rgba(99,102,241,0.5)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(bx * sx, by * sy, bw * sx, bh * sy);
+    ctx.strokeRect(dx, dy, dw, dh);
   }
 }
 

@@ -28,128 +28,191 @@ const PLACE_SCORES    = [100, 60, 40, 25, 15, 10, 5, 5, 5, 5];
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  MAPS  – each map has an id, name, description, icon, colors and obstacles
+//  tileset / floorTile / wallTile are visual hints for the client renderer.
+//  All tile coords are [row, col] into the packed 12×11 spritesheet (16px tiles).
 // ─────────────────────────────────────────────────────────────────────────────
 const MAPS = [
+  // ── 1. Cursed Crypt ────────────────────────────────────────────────────────
   {
-    id: 'classic',
-    name: 'Classic Arena',
-    desc: 'The original battleground – four pillars and center dividers.',
-    icon: '🏟️',
-    bg: '#09090f',
-    gridColor: '#8b5cf6',
-    borderColor: 'rgba(99,102,241,0.4)',
-    obstacleColor: '#1a1c32',
-    obstacleStroke: 'rgba(99,102,241,0.5)',
+    id: 'cursed_crypt',
+    name: 'Cursed Crypt',
+    desc: 'Ancient stone passages and a cursed altar. Nowhere is truly safe.',
+    icon: '💀',
+    bg: '#07060e',
+    gridColor: '#7c3aed',
+    borderColor: 'rgba(109,40,217,0.55)',
+    obstacleColor: '#1c1530',
+    obstacleStroke: 'rgba(139,92,246,0.7)',
+    tileset: 'dungeon',
+    floorTile: [3, 6],   // bright stone floor
+    wallTile:  [0, 0],   // darkest stone wall
     obstacles: [
-      [  40,  30, 80, 80 ],
-      [ 680,  30, 80, 80 ],
-      [  40, 450, 80, 80 ],
-      [ 680, 450, 80, 80 ],
-      [ 330, 100, 140, 34 ],
-      [ 330, 426, 140, 34 ],
-      [ 120, 260,  34, 80 ],
-      [ 646, 260,  34, 80 ],
+      // Top-left L-chamber
+      [  28,  28, 175,  28 ],
+      [  28,  28,  28, 170 ],
+      // Top-right L-chamber
+      [ 597,  28, 175,  28 ],
+      [ 744,  28,  28, 170 ],
+      // Bottom-left L-chamber
+      [  28, 504, 175,  28 ],
+      [  28, 362,  28, 170 ],
+      // Bottom-right L-chamber
+      [ 597, 504, 175,  28 ],
+      [ 744, 362,  28, 170 ],
+      // Central cross altar
+      [ 348, 204, 104,  24 ],   // horizontal arm
+      [ 388, 160,  24, 240 ],   // vertical shaft
     ],
   },
+
+  // ── 2. Cobblestone Plaza ───────────────────────────────────────────────────
   {
-    id: 'the_maze',
-    name: 'The Maze',
-    desc: 'Tight corridors and dead ends – nowhere to hide for long.',
+    id: 'cobblestone_plaza',
+    name: 'Cobblestone Plaza',
+    desc: 'A busy market square. Weave through the stalls or get cornered!',
+    icon: '🏪',
+    bg: '#0e0c07',
+    gridColor: '#d97706',
+    borderColor: 'rgba(217,119,6,0.5)',
+    obstacleColor: '#26200e',
+    obstacleStroke: 'rgba(245,158,11,0.65)',
+    tileset: 'town',
+    floorTile: [3, 0],   // cobblestone pavement
+    wallTile:  [4, 7],   // building-detail tile
+    obstacles: [
+      // Left column of market stall pillars (spaced 100px apart)
+      [ 108,  40,  44,  44 ],
+      [ 108, 140,  44,  44 ],
+      [ 108, 240,  44,  44 ],
+      [ 108, 340,  44,  44 ],
+      [ 108, 440,  44,  44 ],
+      // Right column
+      [ 648,  40,  44,  44 ],
+      [ 648, 140,  44,  44 ],
+      [ 648, 240,  44,  44 ],
+      [ 648, 340,  44,  44 ],
+      [ 648, 440,  44,  44 ],
+      // Central covered market dividers
+      [ 312, 158, 176,  24 ],
+      [ 312, 378, 176,  24 ],
+    ],
+  },
+
+  // ── 3. Shadow Labyrinth ────────────────────────────────────────────────────
+  {
+    id: 'shadow_labyrinth',
+    name: 'Shadow Labyrinth',
+    desc: 'Winding dungeon corridors. One wrong turn and you\'re trapped.',
     icon: '🌀',
-    bg: '#070d13',
-    gridColor: '#06b6d4',
-    borderColor: 'rgba(6,182,212,0.4)',
-    obstacleColor: '#0c1a24',
-    obstacleStroke: 'rgba(6,182,212,0.5)',
+    bg: '#050c12',
+    gridColor: '#0891b2',
+    borderColor: 'rgba(8,145,178,0.5)',
+    obstacleColor: '#091620',
+    obstacleStroke: 'rgba(6,182,212,0.65)',
+    tileset: 'dungeon',
+    floorTile: [3, 0],   // stone floor
+    wallTile:  [1, 0],   // dark stone wall
     obstacles: [
-      // Vertical walls
-      [ 160,   0,  28, 180 ],
-      [ 160, 260,  28, 180 ],
-      [ 400,   0,  28, 120 ],
-      [ 400, 200,  28, 160 ],
-      [ 400, 440,  28, 120 ],
-      [ 612,   0,  28, 180 ],
-      [ 612, 260,  28, 180 ],
-      // Horizontal walls
-      [   0, 180, 130,  28 ],
-      [ 220, 130, 150,  28 ],
-      [ 460, 100, 120,  28 ],
-      [ 220, 350, 150,  28 ],
-      [ 460, 400, 120,  28 ],
-      [ 670, 180, 130,  28 ],
+      // Outer channel walls (touching arena edge for maze feel)
+      [ 160,   0,  26, 200 ],
+      [ 160, 280,  26, 280 ],
+      [ 614,   0,  26, 200 ],
+      [ 614, 280,  26, 280 ],
+      // Inner vertical dividers
+      [ 390,  60,  26, 150 ],
+      [ 390, 340,  26, 160 ],
+      // Horizontal cross-walls
+      [   0, 192, 136,  26 ],
+      [ 220, 130, 154,  26 ],
+      [ 186, 348, 154,  26 ],
+      [ 444, 106, 144,  26 ],
+      [ 444, 408, 144,  26 ],
+      [ 664, 192, 136,  26 ],
+      // Center choke
+      [ 338, 248,  48,  26 ],
+      [ 414, 248,  48,  26 ],
     ],
   },
+
+  // ── 4. Castle Siege ────────────────────────────────────────────────────────
   {
-    id: 'open_field',
-    name: 'Open Field',
-    desc: 'Wide open space – pure speed and reflexes.',
-    icon: '🌾',
-    bg: '#0a0d07',
-    gridColor: '#22c55e',
-    borderColor: 'rgba(34,197,94,0.4)',
-    obstacleColor: '#141e0f',
-    obstacleStroke: 'rgba(34,197,94,0.5)',
-    obstacles: [
-      // Just two small center blocks
-      [ 340, 240,  48, 80 ],
-      [ 412, 240,  48, 80 ],
-    ],
-  },
-  {
-    id: 'fortress',
-    name: 'The Fortress',
-    desc: 'A central stronghold with narrow entrances.',
+    id: 'castle_siege',
+    name: 'Castle Siege',
+    desc: 'Storm the inner keep or defend the outer walls. No easy path.',
     icon: '🏰',
-    bg: '#0d0a0f',
-    gridColor: '#a855f7',
-    borderColor: 'rgba(168,85,247,0.4)',
-    obstacleColor: '#1a1028',
-    obstacleStroke: 'rgba(168,85,247,0.5)',
+    bg: '#0a0810',
+    gridColor: '#9333ea',
+    borderColor: 'rgba(147,51,234,0.5)',
+    obstacleColor: '#18122a',
+    obstacleStroke: 'rgba(168,85,247,0.65)',
+    tileset: 'dungeon',
+    floorTile: [3, 3],   // mid-tone stone
+    wallTile:  [2, 0],   // medium stone wall
     obstacles: [
-      // Outer ring
-      [  60,  40, 200,  28 ],
-      [ 540,  40, 200,  28 ],
-      [  60, 492, 200,  28 ],
-      [ 540, 492, 200,  28 ],
-      [  60,  40,  28, 180 ],
-      [ 712,  40,  28, 180 ],
-      [  60, 340,  28, 180 ],
-      [ 712, 340,  28, 180 ],
-      // Inner fortress
-      [ 280, 180, 240,  24 ],
-      [ 280, 356, 240,  24 ],
-      [ 280, 180,  24, 100 ],
-      [ 496, 280,  24, 100 ],
+      // Outer battlements – four broken sections leave 4 cardinal gaps
+      [  48,  48, 230,  26 ],   // outer top-left
+      [ 522,  48, 230,  26 ],   // outer top-right
+      [  48, 486, 230,  26 ],   // outer bot-left
+      [ 522, 486, 230,  26 ],   // outer bot-right
+      [  48,  48,  26, 190 ],   // outer left-top
+      [  48, 322,  26, 190 ],   // outer left-bot
+      [ 726,  48,  26, 190 ],   // outer right-top
+      [ 726, 322,  26, 190 ],   // outer right-bot
+      // Inner fortress – 8-piece wall with 4 entrance gaps (~80px each)
+      [ 240, 160, 100,  24 ],   // inner top-left
+      [ 460, 160, 100,  24 ],   // inner top-right   (gap 340-460 = 120px)
+      [ 240, 376, 100,  24 ],   // inner bot-left
+      [ 460, 376, 100,  24 ],   // inner bot-right
+      [ 240, 184,  24,  80 ],   // inner left-top
+      [ 240, 336,  24,  44 ],   // inner left-bot    (gap 264-336 = 72px)
+      [ 536, 184,  24,  80 ],   // inner right-top
+      [ 536, 336,  24,  44 ],   // inner right-bot
     ],
   },
+
+  // ── 5. Enchanted Forest ────────────────────────────────────────────────────
   {
-    id: 'chaos_grid',
-    name: 'Chaos Grid',
-    desc: 'Scattered obstacles everywhere – pure mayhem!',
-    icon: '💥',
-    bg: '#0f0907',
-    gridColor: '#f97316',
-    borderColor: 'rgba(249,115,22,0.4)',
-    obstacleColor: '#1e1208',
-    obstacleStroke: 'rgba(249,115,22,0.5)',
+    id: 'enchanted_forest',
+    name: 'Enchanted Forest',
+    desc: 'Twisted ancient trees block every clean path. The bomb glows like a cursed lantern.',
+    icon: '🌲',
+    bg: '#040b06',
+    gridColor: '#16a34a',
+    borderColor: 'rgba(22,163,74,0.45)',
+    obstacleColor: '#0d1e0c',
+    obstacleStroke: 'rgba(34,197,94,0.6)',
+    tileset: 'town',
+    floorTile: [5, 0],   // earthy natural ground
+    wallTile:  [4, 7],   // foliage / tree tile
     obstacles: [
-      // Scattered small blocks
-      [ 100,  60,  50, 50 ],
-      [ 250,  30,  50, 50 ],
-      [ 500,  50,  50, 50 ],
-      [ 660,  80,  50, 50 ],
-      [  80, 200,  50, 50 ],
-      [ 300, 170,  50, 50 ],
-      [ 450, 150,  50, 50 ],
-      [ 620, 220,  50, 50 ],
-      [ 160, 340,  50, 50 ],
-      [ 350, 310,  50, 50 ],
-      [ 520, 330,  50, 50 ],
-      [ 700, 360,  50, 50 ],
-      [ 100, 460,  50, 50 ],
-      [ 280, 470,  50, 50 ],
-      [ 480, 460,  50, 50 ],
-      [ 650, 480,  50, 50 ],
+      // Top-left grove
+      [  76,  46,  46, 46 ],
+      [ 132,  80,  46, 46 ],
+      [  76, 132,  46, 46 ],
+      // Top-center grove
+      [ 356,  28,  46, 46 ],
+      [ 412,  64,  46, 46 ],
+      [ 356,  96,  46, 46 ],
+      // Top-right grove
+      [ 656,  60,  46, 46 ],
+      [ 680, 116,  46, 46 ],
+      // Left flank
+      [  56, 264,  46, 46 ],
+      [  56, 326,  46, 46 ],
+      // Center ancient tree (bigger)
+      [ 368, 220,  64, 80 ],
+      // Right flank
+      [ 698, 254,  46, 46 ],
+      [ 698, 316,  46, 46 ],
+      // Bottom-left grove
+      [  96, 440,  46, 46 ],
+      [ 148, 476,  46, 46 ],
+      // Bottom-center
+      [ 374, 432,  46, 46 ],
+      [ 432, 462,  46, 46 ],
+      // Bottom-right grove
+      [ 638, 434,  46, 46 ],
+      [ 684, 472,  46, 46 ],
     ],
   },
 ];
@@ -259,6 +322,7 @@ function startMapVote(io, room) {
         return { id: m.id, name: m.name, desc: m.desc, icon: m.icon,
                  bg: m.bg, gridColor: m.gridColor, borderColor: m.borderColor,
                  obstacleColor: m.obstacleColor, obstacleStroke: m.obstacleStroke,
+                 tileset: m.tileset, floorTile: m.floorTile, wallTile: m.wallTile,
                  obstacles: m.obstacles };
       }),
       votes:       {},
