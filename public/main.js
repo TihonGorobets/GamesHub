@@ -1421,7 +1421,50 @@ const ptb = {
   lastInputChangeAt: 0,
   modAnim:      0,
   _voteSelected: null,
+  sprites:      {},  // loaded image assets (dungeon sheet + particle images)
+  spriteIdx:    {},  // playerId → stable 0-7 sprite index
+  spriteOrder:  0,   // next sprite index to assign
 };
+
+// ── Sprite tiles (tiny-dungeon packed tilemap, 16×16, no gaps) ─────────────
+// Row 7 (sy=112), cols 0-7: eight distinct adventurer characters
+const PTB_CHAR_SPRITES = [
+  { sx:   0, sy: 112 }, // warrior
+  { sx:  16, sy: 112 }, // elf / archer
+  { sx:  32, sy: 112 }, // thief
+  { sx:  48, sy: 112 }, // wizard
+  { sx:  64, sy: 112 }, // rogue
+  { sx:  80, sy: 112 }, // knight
+  { sx:  96, sy: 112 }, // dark knight
+  { sx: 112, sy: 112 }, // paladin
+];
+
+function ptbLoadSprites() {
+  if (ptb.sprites._loaded) return;
+  ptb.sprites._loaded = true;
+  const load = (key, url) => {
+    const img = new Image();
+    img.onload  = () => { ptb.sprites[key] = img; };
+    img.onerror = () => console.warn('[PTB] sprite failed:', url);
+    img.src = url;
+  };
+  load('dungeon', '/assets/sprites/dungeon.png');
+  load('fire',    '/assets/particles/fire_01.png');
+  load('fire2',   '/assets/particles/fire_02.png');
+  load('flame',   '/assets/particles/flame_01.png');
+  load('spark',   '/assets/particles/spark_01.png');
+  load('spark2',  '/assets/particles/spark_02.png');
+  load('smoke',   '/assets/particles/smoke_01.png');
+}
+
+// Returns a stable 0-7 index for a player id so each player
+// consistently gets the same character sprite across the session.
+function ptbPlayerSpriteIdx(id) {
+  if (ptb.spriteIdx[id] !== undefined) return ptb.spriteIdx[id];
+  const idx = (ptb.spriteOrder++) % PTB_CHAR_SPRITES.length;
+  ptb.spriteIdx[id] = idx;
+  return idx;
+}
 
 // ── Enter screen ───────────────────────────────────────────
 function enterPassBomb(room) {
@@ -1434,6 +1477,7 @@ function enterPassBomb(room) {
     ptb.canvas = $('ptb-canvas');
     ptb.ctx    = ptb.canvas.getContext('2d', { alpha: false });
     ptbInitInput();
+    ptbLoadSprites();
     if (!ptb.fitBound) {
       ptb.fitBound = true;
       window.addEventListener('resize', ptbFitCanvas);
@@ -1508,19 +1552,26 @@ function ptbStopRenderLoop() {
 
 // ── Particles ──────────────────────────────────────────────
 function ptbSpawnExplosion(x, y, color) {
+  const sprKeys = ['fire', 'fire2', 'flame', 'spark', 'spark2'];
   for (let i = 0; i < 42; i++) {
     const angle = Math.random() * Math.PI * 2;
     const spd   = 70 + Math.random() * 240;
     const life  = 0.5 + Math.random() * 0.8;
     const cols  = [color, '#f97316', '#fbbf24', '#ef4444', '#fff'];
+    // First 16 particles use sprite images (fire/spark) if loaded
+    const key   = i < 16 ? sprKeys[Math.floor(Math.random() * sprKeys.length)] : null;
+    const spr   = key && ptb.sprites[key] ? ptb.sprites[key] : null;
     ptb.particles.push({
       x, y,
       vx: Math.cos(angle) * spd,
       vy: Math.sin(angle) * spd,
       life, maxLife: life,
       color: cols[Math.floor(Math.random() * cols.length)],
-      size: 2.5 + Math.random() * 5,
-      drag: 0.92,
+      size:  spr ? (14 + Math.random() * 18) : (2.5 + Math.random() * 5),
+      drag:  0.92,
+      sprImg: spr,
+      rot:    Math.random() * Math.PI * 2,
+      rotSpd: (Math.random() - 0.5) * Math.PI * 4,
     });
   }
   if (ptb.particles.length > PTB_PARTICLE_LIMIT) {
@@ -1754,14 +1805,23 @@ function ptbRender(dt) {
     ctx.globalAlpha = 1;
   }
 
-  // Particles
+  // Particles (circles + optional sprite images for explosions)
   for (const p of ptb.particles) {
     const a = p.life / p.maxLife;
-    ctx.globalAlpha = a * 0.9;
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size * (0.5 + 0.5 * a), 0, Math.PI * 2);
-    ctx.fill();
+    ctx.globalAlpha = a * 0.85;
+    if (p.sprImg) {
+      const sz = p.size * (0.4 + 0.6 * a);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate((p.rot || 0) + (p.rotSpd || 0) * (1 - a));
+      ctx.drawImage(p.sprImg, -sz / 2, -sz / 2, sz, sz);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (0.5 + 0.5 * a), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
 
@@ -1775,11 +1835,19 @@ function ptbRender(dt) {
       if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
       const rp = ptb.renderPos[p.id] || { x: p.x, y: p.y };
       ptb.renderPos[p.id] = rp;
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(rp.x, rp.y, R, 0, Math.PI * 2);
-      ctx.fill();
+      const dungeonImg = ptb.sprites.dungeon;
+      const ghostTile  = PTB_CHAR_SPRITES[ptbPlayerSpriteIdx(p.id)];
+      const SSIZE = 40;
+      ctx.globalAlpha = 0.18;
+      if (dungeonImg) {
+        ctx.drawImage(dungeonImg, ghostTile.sx, ghostTile.sy, 16, 16,
+                      rp.x - SSIZE / 2, rp.y - SSIZE / 2, SSIZE, SSIZE);
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(rp.x, rp.y, R, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
     }
 
@@ -1874,20 +1942,69 @@ function ptbRender(dt) {
         ctx.fill();
       }
 
-      // Body
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(drawX, drawY, R, 0, Math.PI * 2);
-      ctx.fill();
+      // Body: sprite character or circle fallback
+      const dungeonImg = ptb.sprites.dungeon;
+      const charTile   = PTB_CHAR_SPRITES[ptbPlayerSpriteIdx(p.id)];
+      const SSIZE = 40; // display size = 2.5× the 16px source tile
 
-      // Rim
-      ctx.strokeStyle = isBomb
-        ? `rgba(255,${Math.round(180 - pulse * 80)},80,0.95)`
-        : 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = isBomb ? 2.5 + pulse * 1.5 : 1.5;
+      // Shadow ellipse
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = '#000';
       ctx.beginPath();
-      ctx.arc(drawX, drawY, R, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.ellipse(drawX, drawY + SSIZE * 0.38, SSIZE * 0.28, SSIZE * 0.1, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Track facing direction frame-to-frame
+      if (rp._lastDrawX !== undefined && Math.abs(drawX - rp._lastDrawX) > 0.3) {
+        rp._facingLeft = drawX < rp._lastDrawX;
+      }
+      rp._lastDrawX = drawX;
+      // Local player: immediate keyboard-driven facing
+      if (isMe) {
+        if (ptb.keys.left  && !ptb.keys.right) rp._facingLeft = true;
+        if (ptb.keys.right && !ptb.keys.left)  rp._facingLeft = false;
+      }
+
+      if (dungeonImg) {
+        // Render sprite
+        ctx.imageSmoothingEnabled = false; // keep pixel-art crisp
+        ctx.save();
+        if (rp._facingLeft) {
+          ctx.translate(drawX, drawY);
+          ctx.scale(-1, 1);
+          ctx.drawImage(dungeonImg, charTile.sx, charTile.sy, 16, 16,
+                        -SSIZE / 2, -SSIZE / 2, SSIZE, SSIZE);
+        } else {
+          ctx.drawImage(dungeonImg, charTile.sx, charTile.sy, 16, 16,
+                        drawX - SSIZE / 2, drawY - SSIZE / 2, SSIZE, SSIZE);
+        }
+        ctx.restore();
+        ctx.imageSmoothingEnabled = true;
+
+        // Ring highlight for bomb carrier
+        if (isBomb) {
+          ctx.strokeStyle = `rgba(255,${Math.round(180 - pulse * 80)},80,${0.7 + pulse * 0.3})`;
+          ctx.lineWidth = 2 + pulse;
+          ctx.beginPath();
+          ctx.arc(drawX, drawY, SSIZE / 2 + 3, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      } else {
+        // Fallback: colored circle while texture loads
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(drawX, drawY, R, 0, Math.PI * 2);
+        ctx.fill();
+        // Rim
+        ctx.strokeStyle = isBomb
+          ? `rgba(255,${Math.round(180 - pulse * 80)},80,0.95)`
+          : 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = isBomb ? 2.5 + pulse * 1.5 : 1.5;
+        ctx.beginPath();
+        ctx.arc(drawX, drawY, R, 0, Math.PI * 2);
+        ctx.stroke();
+      }
 
       // "me" dashed ring
       if (isMe) {

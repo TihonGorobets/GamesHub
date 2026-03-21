@@ -4,3 +4,6 @@ node_modules/
 .DS_Store
 dist/
 .railway/
+
+# Kenney raw asset packs (extracted locally, sprites copied to public/assets/)
+game_models/
