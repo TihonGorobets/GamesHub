@@ -10,7 +10,9 @@
  * Phaser is used for animated background scenes.
  */
 
-import { WhoIsItGame } from '/games/who-is-it/game.js';
+// NOTE: Don't import the Phaser-based Who-Is-It background at top-level.
+// If Phaser fails to load (CDN blocked/offline), importing the module would
+// throw immediately and break the entire landing page (Continue, floaters, music).
 
 // ─────────────────────────────────────────────────────────
 //  SOCKET
@@ -30,6 +32,22 @@ let state = {
   hasSubmittedFact: false,
   hasVoted:         false,
 };
+
+async function ensureWhoIsItBackground() {
+  if (state.phaserGame) return state.phaserGame;
+  if (typeof Phaser === 'undefined') {
+    console.warn('[WhoIsIt] Phaser not available; skipping background.');
+    return null;
+  }
+  try {
+    const mod = await import('/games/who-is-it/game.js');
+    state.phaserGame = mod.WhoIsItGame.createBackground('phaser-container');
+    return state.phaserGame;
+  } catch (err) {
+    console.warn('[WhoIsIt] Failed to load background:', err);
+    return null;
+  }
+}
 
 // ─────────────────────────────────────────────────────────
 //  HELPERS
@@ -490,8 +508,9 @@ function enterGame(room) {
   showScreen('game');
   $('game-overlay').classList.remove('hidden');
 
+  // Lazy-load the Phaser background so landing doesn't depend on Phaser.
   if (!state.phaserGame) {
-    state.phaserGame = WhoIsItGame.createBackground('phaser-container');
+    ensureWhoIsItBackground();
   }
 }
 
@@ -1892,8 +1911,7 @@ function ptbRender(dt) {
       ctx.fillStyle   = '#0e0e18';
       ctx.strokeStyle = col;
       ctx.lineWidth   = 2.5;
-      ctx.beginPath();
-      ctx.roundRect(box.x - sz / 2, box.y - sz / 2, sz, sz, 6);
+      ptbRoundRect(ctx, box.x - sz / 2, box.y - sz / 2, sz, sz, 6);
       ctx.fill();
       ctx.stroke();
       // Icon
@@ -1908,7 +1926,9 @@ function ptbRender(dt) {
   }
 
   // Particles (circles + optional sprite images for explosions)
-    const a = p.life / p.maxLife;
+  for (const p of ptb.particles) {
+    const aRaw = p.maxLife > 0 ? (p.life / p.maxLife) : 0;
+    const a = Math.max(0, Math.min(1, aRaw));
     ctx.globalAlpha = a * 0.85;
     if (p.sprImg) {
       const sz = p.size * (0.4 + 0.6 * a);
@@ -2811,8 +2831,8 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ── Screen 1: Landing ────────────────────────────────────
-$('btn-landing-continue').addEventListener('click', handleLandingContinue);
-$('input-nickname').addEventListener('keydown', (e) => {
+$('btn-landing-continue')?.addEventListener('click', handleLandingContinue);
+$('input-nickname')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') handleLandingContinue();
 });
 
