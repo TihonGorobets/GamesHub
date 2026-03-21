@@ -1366,9 +1366,9 @@ function showDDGameOver(data) {
 
 const PTB_ARENA_W = 800;
 const PTB_ARENA_H = 560;
-const PTB_PLAYER_SPEED = 200; // must mirror server PLAYER_SPEED
+const PTB_PLAYER_SPEED      = 200; // must mirror server PLAYER_SPEED
+const PTB_BOMB_HOLDER_MULT  = 1.22; // must mirror server BOMB_HOLDER_SPEED_MULT
 const PTB_PLAYER_R = 20;
-const PTB_MAGNETIC_FORCE = 70; // must mirror server magnetic force
 const PTB_PARTICLE_LIMIT = 180;
 const PTB_CORRECTION_EPSILON = 4;
 const PTB_MOVING_CORRECTION_DEADZONE = 18;
@@ -1421,6 +1421,8 @@ const ptb = {
   lastInputChangeAt: 0,
   modAnim:      0,
   _voteSelected: null,
+  _voteMapCache: null,   // maps presented in current vote (for sprite-reload redraws)
+  localBlindUntil: 0,    // timestamp until local blindness effect expires
   sprites:      {},  // loaded image assets (dungeon sheet + particle images)
   spriteIdx:    {},  // playerId → stable 0-7 sprite index
   spriteOrder:  0,   // next sprite index to assign
@@ -1444,8 +1446,11 @@ function ptbLoadSprites() {
   ptb.sprites._loaded = true;
   const load = (key, url) => {
     const img = new Image();
-    // Invalidate static layer cache so tile floors/walls re-render once image loads
-    img.onload  = () => { ptb.sprites[key] = img; ptb.staticLayer = null; };
+    img.onload  = () => {
+      ptb.sprites[key] = img;
+      ptb.staticLayer  = null; // force arena re-render with tiles
+      ptbRedrawVotePreviews();  // re-render vote cards with tiles if open
+    };
     img.onerror = () => console.warn('[PTB] sprite failed:', url);
     img.src = url;
   };
@@ -1457,6 +1462,18 @@ function ptbLoadSprites() {
   load('spark',   '/assets/particles/spark_01.png');
   load('spark2',  '/assets/particles/spark_02.png');
   load('smoke',   '/assets/particles/smoke_01.png');
+}
+
+// Redraw vote-card preview canvases after sprites become available
+function ptbRedrawVotePreviews() {
+  const overlay = $('ptb-overlay-mapvote');
+  if (!overlay || overlay.classList.contains('hidden')) return;
+  if (!ptb._voteMapCache) return;
+  const cards = overlay.querySelectorAll('.ptb-vote-card-preview canvas');
+  cards.forEach((cvs, i) => {
+    const map = ptb._voteMapCache[i];
+    if (map) ptbDrawMapPreview(cvs, map);
+  });
 }
 
 // Returns a stable 0-7 index for a player id so each player
@@ -1777,28 +1794,18 @@ function ptbPredictLocal(rp, dt, gs) {
   const dx = (ptb.keys.right ? 1 : 0) - (ptb.keys.left ? 1 : 0);
   const dy = (ptb.keys.down  ? 1 : 0) - (ptb.keys.up   ? 1 : 0);
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const speedMult = (gs.modifier && gs.modifier.id === 'speed_surge') ? 1.7 : 1.0;
-  let spd = PTB_PLAYER_SPEED * speedMult;
-  let sx = (dx / len) * spd;
-  let sy = (dy / len) * spd;
 
-  if (gs.modifier && gs.modifier.id === 'gravity_shift') {
-    sx *= 0.55;
-    sy = sy * 0.55 + spd * 0.38;
-  }
+  // Mirror all server-side per-player speed modifiers
+  const me = gs.players && gs.players.find((p) => p.id === socket.id);
+  const now = Date.now();
+  const holderBoost = (me && me.hasBomb)                ? PTB_BOMB_HOLDER_MULT : 1.0;
+  const speedBuff   = (me && me.speedBoostUntil > now)  ? 1.35                 : 1.0;
+  const frozenMult  = (me && me.frozenUntil > now)      ? 0.5                  : 1.0;
+  const inv         = (me && me.slipperyUntil > now)    ? -1                   : 1;
+  const spd = PTB_PLAYER_SPEED * holderBoost * speedBuff * frozenMult;
 
-  // Magnetic modifier: pull non-bomb-holders toward bomb holder
-  // (needs to mirror server or local prediction will constantly get corrected)
-  if (gs.modifier && gs.modifier.id === 'magnetic' && gs.bombHolderId && socket.id !== gs.bombHolderId) {
-    const holder = gs.players && gs.players.find((p) => p.id === gs.bombHolderId && p.alive);
-    if (holder && typeof holder.x === 'number' && typeof holder.y === 'number') {
-      const mdx = holder.x - rp.x;
-      const mdy = holder.y - rp.y;
-      const d = Math.sqrt(mdx * mdx + mdy * mdy) || 1;
-      sx += (mdx / d) * PTB_MAGNETIC_FORCE;
-      sy += (mdy / d) * PTB_MAGNETIC_FORCE;
-    }
-  }
+  let sx = (dx / len) * spd * inv;
+  let sy = (dy / len) * spd * inv;
 
   rp.x += sx * dt;
   rp.y += sy * dt;
@@ -1862,16 +1869,45 @@ function ptbRender(dt) {
     ctx.fillRect(0, 0, W, H);
   }
 
-  // Modifier tint
-  if (gs?.modifier) {
-    ctx.fillStyle = gs.modifier.color || '#8b5cf6';
-    ctx.globalAlpha = 0.025 + 0.018 * Math.sin(ptb.modAnim * 3);
-    ctx.fillRect(0, 0, W, H);
-    ctx.globalAlpha = 1;
+  // Modifier tint (removed — effects are now per-player pickup boxes)
+
+  // Pickup boxes
+  {
+    const boxes = gs?.boxes || [];
+    const t = performance.now() / 1000;
+    ctx.save();
+    for (const box of boxes) {
+      const pulse = 0.7 + 0.3 * Math.sin(t * 3 + box.x * 0.05);
+      const col   = box.def?.color || '#ffffff';
+      const icon  = box.def?.icon  || '?';
+      const sz    = 28;
+      // Glow ring
+      ctx.globalAlpha = 0.18 * pulse;
+      ctx.fillStyle   = col;
+      ctx.beginPath();
+      ctx.arc(box.x, box.y, sz + 6, 0, Math.PI * 2);
+      ctx.fill();
+      // Box body
+      ctx.globalAlpha = 0.88;
+      ctx.fillStyle   = '#0e0e18';
+      ctx.strokeStyle = col;
+      ctx.lineWidth   = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(box.x - sz / 2, box.y - sz / 2, sz, sz, 6);
+      ctx.fill();
+      ctx.stroke();
+      // Icon
+      ctx.globalAlpha = 1;
+      ctx.font        = '14px serif';
+      ctx.textAlign   = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillText(icon, box.x, box.y);
+    }
+    ctx.restore();
   }
 
   // Particles (circles + optional sprite images for explosions)
-  for (const p of ptb.particles) {
     const a = p.life / p.maxLife;
     ctx.globalAlpha = a * 0.85;
     if (p.sprImg) {
@@ -2120,6 +2156,20 @@ function ptbRender(dt) {
     ctx.fillRect(-6, -6, W + 12, H + 12);
   }
 
+  // Blindness overlay (only for the local player)
+  if (ptb.localBlindUntil > Date.now()) {
+    const fade = Math.min(1, (ptb.localBlindUntil - Date.now()) / 300);
+    ctx.fillStyle = `rgba(0,0,0,${0.9 * fade})`;
+    ctx.fillRect(-6, -6, W + 12, H + 12);
+    ctx.globalAlpha = fade * 0.8;
+    ctx.fillStyle = '#78716c';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🙈 BLINDED!', W / 2, H / 2);
+    ctx.globalAlpha = 1;
+  }
+
   ctx.restore();
 }
 
@@ -2207,17 +2257,7 @@ function ptbUpdateHUD(gs) {
   }
 
   const mb = $('ptb-modifier-banner');
-  if (mb) {
-    if (gs.modifier && gs.modifierTLeft > 0) {
-      mb.classList.remove('hidden');
-      mb.style.borderColor = gs.modifier.color;
-      const mi = $('ptb-modifier-icon'), mn = $('ptb-modifier-name');
-      if (mi) mi.textContent = gs.modifier.icon + ' ';
-      if (mn) mn.textContent = gs.modifier.name + ' (' + gs.modifierTLeft.toFixed(0) + 's)';
-    } else {
-      mb.classList.add('hidden');
-    }
-  }
+  if (mb) mb.classList.add('hidden'); // modifier system removed
 }
 
 // ── Toast helper ───────────────────────────────────────────
@@ -2257,6 +2297,8 @@ function ptbShowMapVote(data) {
   $('ptb-vote-time').textContent = data.timeLeft || VOTE_SECS;
   const footer = $('ptb-vote-footer');
   if (footer) footer.innerHTML = '<span style="opacity:.5">Click a map to vote</span>';
+
+  ptb._voteMapCache = (data.maps || []);
 
   const container = $('ptb-vote-cards');
   if (!container) return;
@@ -2700,18 +2742,35 @@ socket.on('ptb_new_bomb', ({ holderId, holderName, bombTimeLeft, bombMaxTime, pl
   ptbShowToast('ptb-transfer-toast', msg, 2000);
 });
 
-socket.on('ptb_modifier', ({ modifier, duration }) => {
-  const msg = `${modifier.icon} ${modifier.name}${duration > 0 ? ` (${duration}s)` : ''}`;
-  ptbShowToast('ptb-mod-toast', msg, 3000);
-  if (ptb.state) {
-    ptb.state.modifier     = modifier;
-    ptb.state.modifierTLeft = duration;
+socket.on('ptb_box_spawn', (box) => {
+  if (!ptb.state) return;
+  if (!ptb.state.boxes) ptb.state.boxes = [];
+  // Avoid duplicates (reconnect safety)
+  if (!ptb.state.boxes.find((b) => b.id === box.id)) {
+    ptb.state.boxes.push(box);
   }
 });
 
-socket.on('ptb_modifier_end', () => {
-  if (ptb.state) ptb.state.modifier = null;
-  $('ptb-modifier-banner')?.classList.add('hidden');
+socket.on('ptb_box_collected', ({ id, collecterId, collectorName, def, blindUntil }) => {
+  if (ptb.state && ptb.state.boxes) {
+    ptb.state.boxes = ptb.state.boxes.filter((b) => b.id !== id);
+  }
+  // Apply blind effect for local player
+  if (collecterId === socket.id && blindUntil > 0) {
+    ptb.localBlindUntil = blindUntil;
+  }
+  // Toast notification
+  const isMe = collecterId === socket.id;
+  const who  = isMe ? 'You' : escHtml(collectorName);
+  const icon = def?.icon || '📦';
+  const msg  = `${icon} ${who} picked up ${def?.name || 'a pickup'}!`;
+  ptbShowToast('ptb-mod-toast', msg, 2500);
+});
+
+socket.on('ptb_shield_block', ({ blockerName, blockerId }) => {
+  const isMe = blockerId === socket.id;
+  const msg  = isMe ? '🛡️ Your shield blocked the bomb!' : `🛡️ ${escHtml(blockerName)}'s shield blocked the bomb!`;
+  ptbShowToast('ptb-transfer-toast', msg, 2200);
 });
 
 // ── Drawing Dash socket events ───────────────────────────────

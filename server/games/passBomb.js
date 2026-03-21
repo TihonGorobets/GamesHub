@@ -224,15 +224,32 @@ function getMapById(mapId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  MODIFIERS
+//  PICKUP BOXES  – random buffs & debuffs scattered around the arena
 // ─────────────────────────────────────────────────────────────────────────────
-const MODIFIER_POOL = [
-  { id: 'speed_surge',   name: 'Speed Surge!',    icon: '⚡', color: '#22c55e', duration: 8  },
-  { id: 'sticky_bomb',   name: 'Sticky Bomb!',    icon: '🧲', color: '#f97316', duration: 6  },
-  { id: 'gravity_shift', name: 'Gravity Shift!',  icon: '🌀', color: '#8b5cf6', duration: 7  },
-  { id: 'magnetic',      name: 'Magnetic Arena!', icon: '🔮', color: '#ec4899', duration: 6  },
-  { id: 'teleport',      name: 'Teleport Chaos!', icon: '✨', color: '#06b6d4', duration: 0  }, // instant
+const PICKUP_BUFFS = [
+  { id: 'speed_boost',  type: 'buff',   name: 'Speed Boost',  icon: '⚡', color: '#22c55e', duration: 6  },
+  { id: 'shield',       type: 'buff',   name: 'Shield',       icon: '🛡️', color: '#3b82f6', duration: 8  },
+  { id: 'ghost',        type: 'buff',   name: 'Ghost Mode',   icon: '👻', color: '#a855f7', duration: 4  },
+  { id: 'swap',         type: 'buff',   name: 'Swap!',        icon: '🔀', color: '#06b6d4', duration: 0  },
+  { id: 'freeze_aura',  type: 'buff',   name: 'Freeze Aura',  icon: '❄️', color: '#bae6fd', duration: 4  },
 ];
+const PICKUP_DEBUFFS = [
+  { id: 'slippery',     type: 'debuff', name: 'Slippery!',    icon: '🧊', color: '#ef4444', duration: 5  },
+  { id: 'sticky',       type: 'debuff', name: 'Sticky Bomb',  icon: '🧲', color: '#f97316', duration: 4  },
+  { id: 'blindness',    type: 'debuff', name: 'Blindness',    icon: '🙈', color: '#78716c', duration: 3  },
+  { id: 'magnet',       type: 'debuff', name: 'Bomb Magnet',  icon: '🔮', color: '#ec4899', duration: 5  },
+  { id: 'tiny',         type: 'debuff', name: 'Tiny!',        icon: '🐭', color: '#f59e0b', duration: 5  },
+];
+
+// Pre-defined box spawn points per map [x, y] — all in open walkable areas
+const MAP_BOX_SPAWNS = {
+  cursed_crypt:      [[230,170],[570,170],[230,390],[570,390],[400,280],[400,80],[400,480]],
+  cobblestone_plaza: [[400,60],[400,280],[400,500],[250,280],[550,280],[190,340],[610,340]],
+  shadow_labyrinth:  [[80,96],[720,96],[80,464],[720,464],[290,260],[510,260],[400,400]],
+  castle_siege:      [[180,100],[620,100],[180,460],[620,460],[400,280],[80,280],[720,280]],
+  enchanted_forest:  [[280,280],[520,280],[400,165],[200,390],[600,390],[400,420]],
+};
+const DEFAULT_BOX_SPAWNS = [[200,160],[600,160],[400,280],[200,400],[600,400]];
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  HELPERS
@@ -298,6 +315,94 @@ function clearTimers(gs) {
   if (gs._explodeTimeout) { clearTimeout(gs._explodeTimeout); gs._explodeTimeout = null; }
   if (gs._voteTimer)      { clearTimeout(gs._voteTimer); gs._voteTimer   = null; }
   if (gs._voteCountdown)  { clearInterval(gs._voteCountdown); gs._voteCountdown = null; }
+  if (gs._boxTimers)      { gs._boxTimers.forEach(clearTimeout); gs._boxTimers = []; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PICKUP BOX FUNCTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+function randPickup() {
+  const isDebuff = Math.random() < 0.40; // 40% debuff, 60% buff
+  const pool = isDebuff ? PICKUP_DEBUFFS : PICKUP_BUFFS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function spawnBox(io, room, usedIdxs) {
+  const gs     = room.gameState;
+  const spawns = MAP_BOX_SPAWNS[gs.mapId] || DEFAULT_BOX_SPAWNS;
+  const avail  = spawns.map((_, i) => i).filter((i) => !usedIdxs.includes(i));
+  if (!avail.length) return null;
+  const idx = avail[Math.floor(Math.random() * avail.length)];
+  const [x, y] = spawns[idx];
+  const def = randPickup();
+  const box = { id: `box_${Date.now()}_${Math.random().toString(36).slice(2)}`, x, y, spawnIdx: idx, def };
+  gs.boxes.push(box);
+  io.to(room.id).emit('ptb_box_spawn', { id: box.id, x, y, def });
+  return box;
+}
+
+function initBoxes(io, room) {
+  const gs = room.gameState;
+  gs.boxes     = [];
+  gs._boxTimers = [];
+  const spawns = MAP_BOX_SPAWNS[gs.mapId] || DEFAULT_BOX_SPAWNS;
+  const count  = Math.min(2, spawns.length);
+  const used   = [];
+  for (let i = 0; i < count; i++) {
+    const box = spawnBox(io, room, used);
+    if (box) used.push(box.spawnIdx);
+  }
+}
+
+function collectBox(io, room, player, box) {
+  const gs  = room.gameState;
+  const now = Date.now();
+  gs.boxes  = gs.boxes.filter((b) => b.id !== box.id);
+  const def = box.def;
+
+  // Apply server-side effect
+  switch (def.id) {
+    case 'speed_boost':  player.speedBoostUntil = now + def.duration * 1000; break;
+    case 'shield':       player.shieldUntil     = now + def.duration * 1000; break;
+    case 'ghost':        player.ghostUntil      = now + def.duration * 1000; break;
+    case 'swap': {
+      const others = gs.alivePlayers().filter((p) => p.id !== player.id);
+      if (others.length) {
+        const t = others[Math.floor(Math.random() * others.length)];
+        const tx = t.x; const ty = t.y;
+        t.x = player.x; t.y = player.y;
+        player.x = tx;  player.y = ty;
+      }
+      break;
+    }
+    case 'freeze_aura': {
+      const until = now + def.duration * 1000;
+      gs.alivePlayers().forEach((p) => { if (p.id !== player.id) p.frozenUntil = until; });
+      break;
+    }
+    case 'slippery':  player.slipperyUntil = now + def.duration * 1000; break;
+    case 'sticky':    player.stickyUntil   = now + def.duration * 1000; break;
+    case 'blindness': player.blindUntil    = now + def.duration * 1000; break;
+    case 'magnet':    player.magnetUntil   = now + def.duration * 1000; break;
+    case 'tiny':      player.tinyUntil     = now + def.duration * 1000; break;
+  }
+
+  io.to(room.id).emit('ptb_box_collected', {
+    id:            box.id,
+    collecterId:   player.id,
+    collectorName: player.name,
+    def,
+    blindUntil:    def.id === 'blindness' ? player.blindUntil : 0,
+  });
+
+  // Respawn a new box after 5-8 seconds
+  const delay = 5000 + Math.random() * 3000;
+  const timer = setTimeout(() => {
+    if (!room.gameState || room.gameState.phase !== 'PTB_PLAYING') return;
+    const usedIdxs = gs.boxes.map((b) => b.spawnIdx);
+    spawnBox(io, room, usedIdxs);
+  }, delay);
+  gs._boxTimers.push(timer);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -398,8 +503,17 @@ class PassBombState {
       hasBomb:    false,
       alive:      true,
       score:      rp.score || 0,
-      stickyUntil: 0,
+      stickyUntil:      0,
       passCooldownUntil: 0,
+      // pickup effect timestamps
+      speedBoostUntil:  0,
+      shieldUntil:      0,
+      ghostUntil:       0,
+      frozenUntil:      0,
+      slipperyUntil:    0,
+      blindUntil:       0,
+      magnetUntil:      0,
+      tinyUntil:        0,
     }));
 
     this.mapId          = mapId || 'classic';
@@ -409,9 +523,6 @@ class PassBombState {
     this.bombTimeLeft   = 0;
     this.bombMaxTime    = 0;
     this.countdownLeft  = COUNTDOWN_SECS;
-    this.modifier       = null;
-    this.modifierTLeft  = 0;
-    this.nextModifier   = Date.now() + randBetween(12000, 20000);
     this.eliminationLog = [];
     this.lastTickTime   = Date.now();
     this._tick          = null;
@@ -422,6 +533,9 @@ class PassBombState {
     this._voteTimer     = null;
     this._voteCountdown = null;
     this.voteTimeLeft   = VOTE_SECS;
+    // Pickup boxes
+    this.boxes          = [];
+    this._boxTimers     = [];
   }
 
   alivePlayers() { return this.players.filter((p) => p.alive); }
@@ -440,13 +554,21 @@ class PassBombState {
         alive:   p.alive,
         score:   p.score,
         seq:     p.inputSeq,
+        // active effects (timestamps — client uses these for visual cues)
+        speedBoostUntil: p.speedBoostUntil || 0,
+        shieldUntil:     p.shieldUntil     || 0,
+        ghostUntil:      p.ghostUntil      || 0,
+        frozenUntil:     p.frozenUntil     || 0,
+        slipperyUntil:   p.slipperyUntil   || 0,
+        blindUntil:      p.blindUntil      || 0,
+        magnetUntil:     p.magnetUntil     || 0,
+        tinyUntil:       p.tinyUntil       || 0,
       })),
       bombHolderId:  this.bombHolderId,
       bombTimeLeft:  +this.bombTimeLeft.toFixed(2),
       bombMaxTime:   this.bombMaxTime,
       countdownLeft: this.countdownLeft,
-      modifier:      this.modifier,
-      modifierTLeft: +Math.max(0, this.modifierTLeft).toFixed(1),
+      boxes:         this.boxes,
     };
   }
 }
@@ -465,7 +587,10 @@ function startCountdown(io, room) {
   const alive = gs.players;
   const spawns = shuffle(generateSpawnPositions(alive.length));
   alive.forEach((p, i) => {
-    Object.assign(p, { ...spawns[i], vx: 0, vy: 0, alive: true, hasBomb: false, stickyUntil: 0, passCooldownUntil: 0, inputDx: 0, inputDy: 0 });
+    Object.assign(p, { ...spawns[i], vx: 0, vy: 0, alive: true, hasBomb: false,
+      stickyUntil: 0, passCooldownUntil: 0, inputDx: 0, inputDy: 0,
+      speedBoostUntil: 0, shieldUntil: 0, ghostUntil: 0, frozenUntil: 0,
+      slipperyUntil: 0, blindUntil: 0, magnetUntil: 0, tinyUntil: 0 });
   });
 
   io.to(room.id).emit('phase_changed', {
@@ -489,13 +614,11 @@ function startCountdown(io, room) {
 function startPlaying(io, room) {
   const gs = room.gameState;
   clearTimers(gs);
-  gs.phase         = 'PTB_PLAYING';
-  gs.modifier      = null;
-  gs.modifierTLeft = 0;
-  gs.nextModifier  = Date.now() + randBetween(12000, 20000);
+  gs.phase          = 'PTB_PLAYING';
   gs.eliminationLog = [];
 
   assignBomb(gs, null);
+  initBoxes(io, room);
 
   io.to(room.id).emit('phase_changed', {
     phase: 'PTB_PLAYING',
@@ -525,50 +648,34 @@ function gameTick(io, room) {
   if (gs.phase !== 'PTB_PLAYING') return;
 
   const now = Date.now();
-  const dt  = PHYS_DT; // fixed timestep – eliminates jitter from variable intervals
-  const wallDt = Math.min((now - gs.lastTickTime) / 1000, 0.1);
+  const dt  = PHYS_DT;
   gs.lastTickTime = now;
 
-  const obstacles = gs.map.obstacles;
-
-  // ── Modifier lifecycle ──────────────────────────────────
-  if (gs.modifier) {
-    gs.modifierTLeft -= wallDt;
-    if (gs.modifierTLeft <= 0) {
-      gs.modifier = null;
-      gs.modifierTLeft = 0;
-      io.to(room.id).emit('ptb_modifier_end', {});
-    }
-  }
-  if (!gs.modifier && now >= gs.nextModifier && gs.alivePlayers().length > 1) {
-    activateModifier(io, room);
-    gs.nextModifier = now + randBetween(18000, 36000);
-  }
-
-  const speedMult  = gs.modifier?.id === 'speed_surge'   ? 1.7 : 1.0;
-  const gravMode   = gs.modifier?.id === 'gravity_shift';
-  const magMode    = gs.modifier?.id === 'magnetic';
+  const obstacles  = gs.map.obstacles;
   const bombHolder = gs.players.find((p) => p.id === gs.bombHolderId && p.alive);
   const alive      = gs.alivePlayers();
 
   // ── Move players ────────────────────────────────────────
   for (const p of alive) {
-    const holderBoost = (p.hasBomb) ? BOMB_HOLDER_SPEED_MULT : 1.0;
-    const spd = PLAYER_SPEED * speedMult * holderBoost;
-    let sx = p.inputDx * spd;
-    let sy = p.inputDy * spd;
+    const holderBoost = p.hasBomb                ? BOMB_HOLDER_SPEED_MULT : 1.0;
+    const speedBuff   = (p.speedBoostUntil > now) ? 1.35                  : 1.0;
+    const frozenMult  = (p.frozenUntil     > now) ? 0.5                   : 1.0;
+    const spd = PLAYER_SPEED * holderBoost * speedBuff * frozenMult;
 
-    if (gravMode) {
-      sx *= 0.55;
-      sy = sy * 0.55 + spd * 0.38;
-    }
+    // Slippery: invert controls
+    const inv = (p.slipperyUntil > now) ? -1 : 1;
+    let sx = p.inputDx * spd * inv;
+    let sy = p.inputDy * spd * inv;
 
-    if (magMode && bombHolder && p.id !== bombHolder.id) {
-      const dx = bombHolder.x - p.x;
-      const dy = bombHolder.y - p.y;
-      const d  = Math.sqrt(dx*dx + dy*dy) || 1;
-      sx += (dx / d) * 70;
-      sy += (dy / d) * 70;
+    // Magnet debuff: nudge the bomb holder toward this player
+    if (p.magnetUntil > now && bombHolder && bombHolder.id !== p.id) {
+      const mx = p.x - bombHolder.x;
+      const my = p.y - bombHolder.y;
+      const md = Math.sqrt(mx*mx + my*my) || 1;
+      if (md < 260) {
+        bombHolder.x += (mx / md) * 55 * dt;
+        bombHolder.y += (my / md) * 55 * dt;
+      }
     }
 
     p.vx = sx;
@@ -580,17 +687,31 @@ function gameTick(io, room) {
     p.x = Math.max(PLAYER_R, Math.min(ARENA_W - PLAYER_R, p.x));
     p.y = Math.max(PLAYER_R, Math.min(ARENA_H - PLAYER_R, p.y));
 
-    // Obstacle collision
-    for (const obs of obstacles) resolveCircleAABB(p, obs[0], obs[1], obs[2], obs[3], PLAYER_R);
+    // Obstacle collision (ghost players pass through)
+    if (!(p.ghostUntil > now)) {
+      for (const obs of obstacles) resolveCircleAABB(p, obs[0], obs[1], obs[2], obs[3], PLAYER_R);
+    }
 
     // Re-clamp after resolve
     p.x = Math.max(PLAYER_R, Math.min(ARENA_W - PLAYER_R, p.x));
     p.y = Math.max(PLAYER_R, Math.min(ARENA_H - PLAYER_R, p.y));
   }
 
+  // ── Pickup box collection ────────────────────────────────
+  const BOX_PICK_R2 = 28 * 28;
+  for (const p of alive) {
+    for (let i = gs.boxes.length - 1; i >= 0; i--) {
+      const box = gs.boxes[i];
+      if (dist2(p.x, p.y, box.x, box.y) < BOX_PICK_R2) {
+        collectBox(io, room, p, box);
+        break;
+      }
+    }
+  }
+
   // ── Bomb transfer ───────────────────────────────────────
   if (bombHolder) {
-    const isSticky  = gs.modifier?.id === 'sticky_bomb' || (bombHolder.stickyUntil > now);
+    const isSticky  = (bombHolder.stickyUntil > now);
     const isCooling = bombHolder.passCooldownUntil > now;
     if (!isSticky && !isCooling) {
       for (const other of alive) {
@@ -628,18 +749,22 @@ function gameTick(io, room) {
 //  BOMB TRANSFER
 // ─────────────────────────────────────────────────────────────────────────────
 function transferBomb(io, room, from, to) {
-  const gs = room.gameState;
-  from.hasBomb   = false;
-  to.hasBomb     = true;
+  const gs  = room.gameState;
+  const now = Date.now();
+
+  // Shield buff: block the transfer and consume the shield
+  if (to.shieldUntil > now) {
+    to.shieldUntil = 0;
+    io.to(room.id).emit('ptb_shield_block', { blockerId: to.id, blockerName: to.name });
+    return;
+  }
+
+  from.hasBomb    = false;
+  to.hasBomb      = true;
   gs.bombHolderId = to.id;
 
-  // Always apply a brief pass cooldown to prevent instant ping-pong transfers
-  to.passCooldownUntil = Date.now() + PASS_COOLDOWN_MS;
-
-  // Sticky modifier makes bomb stick for 3s after receiving
-  if (gs.modifier?.id === 'sticky_bomb') {
-    to.stickyUntil = Date.now() + 3000;
-  }
+  // Brief pass cooldown to prevent instant ping-pong
+  to.passCooldownUntil = now + PASS_COOLDOWN_MS;
 
   io.to(room.id).emit('ptb_bomb_transfer', {
     fromId:       from.id,
@@ -708,32 +833,6 @@ function explodeBomb(io, room, player) {
       gs._tick = setInterval(() => gameTick(io, room), TICK_MS);
     }, EXPLODE_PAUSE);
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  MODIFIERS
-// ─────────────────────────────────────────────────────────────────────────────
-function activateModifier(io, room) {
-  const gs  = room.gameState;
-  const mod = MODIFIER_POOL[Math.floor(Math.random() * MODIFIER_POOL.length)];
-
-  if (mod.id === 'teleport') {
-    // Instant – teleport all alive players
-    const alive  = gs.alivePlayers();
-    const spawns = shuffle(generateSpawnPositions(alive.length));
-    alive.forEach((p, i) => {
-      p.x = spawns[i].x;
-      p.y = spawns[i].y;
-      p.vx = 0;
-      p.vy = 0;
-    });
-    io.to(room.id).emit('ptb_modifier', { modifier: mod, duration: 0 });
-    return;
-  }
-
-  gs.modifier      = mod;
-  gs.modifierTLeft = mod.duration;
-  io.to(room.id).emit('ptb_modifier', { modifier: mod, duration: mod.duration });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
